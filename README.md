@@ -1,22 +1,50 @@
-## Setup LibriVAD requirements
-1. Navigate to the LibriVAD directory and install python libraries
+---
+license: apache-2.0
+language: en
+pretty_name: "LibriVAD"
+datasets:
+- librispeech
+- DEMAND
+- WHAM!
+- librivox
+tags:
+- audio
+- voice-activity-detection
+- vad
+- librispeech
+- noise-augmented
+---
 
+# LibriVAD Dataset Generation
+
+This repository contains the scripts necessary to generate the LibriVAD dataset, a large-scale, noise-augmented dataset for Voice Activity Detection (VAD) based on the LibriSpeech corpus.
+
+## Setup LibriVAD Requirements
+
+1.  **Install Python Libraries:** Navigate to the `LibriVAD` directory and install the required dependencies.
+
+    ```bash
     pip install -r requirements.txt
+    ```
 
-2. Choose the mirror closer to your location from [EU, USA, CN] and run the setup.py script. EU example:
+2.  **Download Source Data:** Run the `setup.py` script and choose the LibriSpeech mirror closest to your location from `[EU, USA, CN]`. This will download the necessary splits of the LibriSpeech dataset.
 
+    *EU Example:*
+    ```bash
     python setup.py EU
+    ```
+    After downloading `train-clean-100`, `dev-clean`, and `test-clean`, the local setup should take a few minutes.
 
-    After downloading LibriSpeech train-clean-100, dev-clean and test-clean, the setup should take a few minutes.
+## Creating the LibriVAD Dataset
 
-## Creating LibriVAD
-3. After the setup is completed, run the create_LibriVAD.py script and choose the size of the generated dataset between "small", "medium" and "large". 
-   The sizes of the dataset are 15Gb, 150Gb and 1.5Tb respectively. Example:
+3.  **Generate the Dataset:** After the setup is complete, run the `create_LibriVAD.py` script. Choose the size of the generated dataset: `"small"`, `"medium"`, or `"large"`.
 
+    The approximate sizes of the final dataset are **15GB**, **150GB**, and **1.5TB** respectively.
+
+    *Small Dataset Example:*
+    ```bash
     python create_LibriVAD.py small
+    ```
+    The generation process can take several hours, depending on the chosen size and your machine's performance.
 
-The generation process could take a few hours, depending on the size choice.
-
-!The space requirements are 61Gb for the setup, not including the size of LibriVAD (15Gb, 150Gb or 1.5Tb)
-
-
+> **Warning:** The initial space requirement for the setup process (before generating the final dataset) is approximately **61GB**. Please ensure you have sufficient disk space.
