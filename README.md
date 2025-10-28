@@ -39,7 +39,7 @@ This repository contains the scripts necessary to generate the LibriVAD dataset,
 
 3.  **Generate the Dataset:** After the setup is complete, run the `create_LibriVAD.py` script. Choose the size of the generated dataset: `"small"`, `"medium"`, or `"large"`.
 
-    The approximate sizes of the final dataset are **15GB**, **150GB**, and **1.5TB** respectively.
+    The approximate sizes of the final dataset are **15GB**, **150GB**, and **1.5TB**, respectively.
 
     *Small Dataset Example:*
     ```bash
