@@ -1,5 +1,5 @@
 ---
-license: apache-2.0
+license: cc-by-nc-sa-4.0
 language: en
 pretty_name: "LibriVAD"
 datasets:
