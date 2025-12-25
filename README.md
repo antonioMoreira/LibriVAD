@@ -48,3 +48,7 @@ This repository contains the scripts necessary to generate the LibriVAD dataset,
     The generation process can take a few minutes to several hours, depending on the chosen size and your machine's performance.
 
 > **Warning:** The initial space requirement for the setup process (before generating the final dataset) is approximately **61GB**. Please ensure you have sufficient disk space.
+>
+> ## Citation
+>
+> I. Stylianou, A.K. Sarkar, N. Dawalatabad, J. Glass, and Z.-H. Tan, "LibriVAD: A Scalable Open Dataset with Deep Learning Benchmarks for Voice Activity Detection," arXiv preprint arXiv:2512.17281 (2025).
