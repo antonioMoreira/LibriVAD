@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.14.7"
 dependencies = [
+    "einops>=0.8.2",
     "librosa>=1.0.0",
     "matplotlib>=3.11.2",
     "numpy>=2.5.4",
@@ -53,6 +54,7 @@ include = ["src", "*.py"]
 
 [dependency-groups]
 dev = [
+    "pytest>=9.1.1",
     "ruff>=0.17.1",
     "ty>=0.0.90",
 ]

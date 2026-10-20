@@ -24,6 +24,10 @@ load_dotenv()
 # --- Hugging Face URLs for additional data ---
 FORCED_ALIGNMENTS_URL: str = os.environ["FORCED_ALIGNMENTS_URL"]
 NOISES_URL: str = os.environ["NOISES_URL"]
+HF_MODELS_BASE_URL: str = os.environ["HF_MODELS_BASE_URL"]
+MODELS_TO_DOWNLOAD: list[str] = [
+    item.strip() for item in os.environ["MODELS_TO_DOWNLOAD"].split(",") if item.strip()
+]
 
 
 # --- Configuration ---
@@ -180,15 +184,25 @@ def main() -> None:
 
     # Use pathlib for cross-platform path handling
     base_dir: Path = Path(os.environ["PROJECT_ROOT"])
+    files_dir: Path = base_dir / os.environ["FILES_DIR"]
     flac_dir: Path = base_dir / os.environ["FLAC_DIR"]
     scripts_dir: Path = base_dir / os.environ["SCRIPTS_DIR"]
 
-    # --- Download and extract additional data (Forced Alignments and Noises) ---
+    # --- Download and extract additional data (Forced Alignments, Noises, and Models) ---
     forced_alignments_dir: Path = base_dir / os.environ["FORCED_ALIGNMENTS_DIR"]
     noises_dir: Path = base_dir / os.environ["NOISES_DIR"]
 
     download_and_extract_zip(FORCED_ALIGNMENTS_URL, forced_alignments_dir)
     download_and_extract_zip(NOISES_URL, noises_dir)
+
+    for model_rel_path in MODELS_TO_DOWNLOAD:
+        model_dest: Path = files_dir / model_rel_path
+        if model_dest.exists() and model_dest.stat().st_size >= 1024:
+            print(f"Skipping download for {model_rel_path}: already exists.")
+            continue
+        model_dest.parent.mkdir(parents=True, exist_ok=True)
+        model_url: str = f"{HF_MODELS_BASE_URL}/{model_rel_path}"
+        download_file(model_url, model_dest)
 
     # Create the target directory if it doesn't exist
     flac_dir.mkdir(parents=True, exist_ok=True)
@@ -197,12 +211,26 @@ def main() -> None:
     print(f"Downloading files to: {flac_dir}")
 
     # --- 3. Download, Extract, and Clean Up Archives ---
+    librispeech_flac_dir: Path = base_dir / os.environ["LIBRISPEECH_FLAC_DIR"]
     for filename in FILES_TO_DOWNLOAD:
+        split_name: str = filename.removesuffix(".tar.gz")
+        split_dir: Path = librispeech_flac_dir / split_name
+
+        if split_dir.exists() and any(split_dir.iterdir()):
+            print(
+                f"Skipping download and extraction for {filename}: "
+                f"{split_dir} is already populated."
+            )
+            continue
+
         file_url: str = f"{base_url}/{filename}"
         archive_path: Path = flac_dir / filename
 
-        # Download the file
-        download_file(file_url, archive_path)
+        # Download the file if not already present locally
+        if not archive_path.exists():
+            download_file(file_url, archive_path)
+        else:
+            print(f"Found existing archive {archive_path}, skipping download.")
 
         # Extract the archive
         print(f"Extracting {filename}...")

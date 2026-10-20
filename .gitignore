@@ -1,5 +1,8 @@
+**/__pycache__/
 .ruff_cache
 .venv
 .tmp/
 files/
 Results/
+
+files_bkp.tar.xz
