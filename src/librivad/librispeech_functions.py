@@ -155,8 +155,10 @@ def remove_silence(
 
     Args:
         signal (np.array): The audio signal from which to remove silence.
-        wav_path (str or Path): Path to the .wav audio file (used to infer label path if not provided).
-        label_path (str or Path, optional): Path to the .npy label file. If None, it will be inferred from wav_path.
+        wav_path (str or Path): Path to the .wav audio file (used to infer
+            label path if not provided).
+        label_path (str or Path, optional): Path to the .npy label file.
+            If None, it will be inferred from wav_path.
     """
     resolved_label_path: str | Path
     if label_path is None:
@@ -167,7 +169,7 @@ def remove_silence(
             # Find the dataset name (e.g., 'LibriSpeech') and replace it with 'Labels'
             idx: int = parts.index(wav_p.parts[-5])  # e.g., 'train-clean-100'
             parts[idx - 1] = "Labels"
-        except (ValueError, IndexError):
+        except ValueError, IndexError:
             # Fallback for unexpected path structures
             parts[-6] = "Labels"
 

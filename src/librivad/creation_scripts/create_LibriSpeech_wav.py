@@ -1,11 +1,15 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+from collections.abc import Sequence
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 import soundfile as sf
+from numpy.typing import NDArray
 from tqdm import tqdm
 
 
-def flac_to_wav(flac_path: Path, flac_root_dir: Path, wav_root_dir: Path):
+def flac_to_wav(flac_path: Path, flac_root_dir: Path, wav_root_dir: Path) -> None:
     """
     Converts a single .flac file to .wav, preserving the directory structure.
 
@@ -17,8 +21,8 @@ def flac_to_wav(flac_path: Path, flac_root_dir: Path, wav_root_dir: Path):
     try:
         # Calculate the destination path for the .wav file.
         # This keeps the same subfolder structure as the source.
-        relative_path = flac_path.relative_to(flac_root_dir)
-        wav_path = wav_root_dir / relative_path.with_suffix(".wav")
+        relative_path: Path = flac_path.relative_to(flac_root_dir)
+        wav_path: Path = wav_root_dir / relative_path.with_suffix(".wav")
 
         # Create parent directories for the output file if they don't exist.
         wav_path.parent.mkdir(parents=True, exist_ok=True)
@@ -26,10 +30,10 @@ def flac_to_wav(flac_path: Path, flac_root_dir: Path, wav_root_dir: Path):
         # Use 'with' statements for safe and automatic file handling.
         # This guarantees files are closed even if errors occur.
         with sf.SoundFile(str(flac_path), "r") as f_in:
-            data = f_in.read()
-            samplerate = int(f_in.samplerate)
-            channels = f_in.channels
-            subtype = f_in.subtype
+            data: NDArray[Any] = f_in.read()
+            samplerate: int = int(f_in.samplerate)
+            channels: int = f_in.channels
+            subtype: str = f_in.subtype
 
             with sf.SoundFile(
                 str(wav_path), mode="w", samplerate=samplerate, channels=channels, subtype=subtype
@@ -41,7 +45,9 @@ def flac_to_wav(flac_path: Path, flac_root_dir: Path, wav_root_dir: Path):
         print(f"Error processing {flac_path}: {e}")
 
 
-def process_files_in_parallel(flac_files, flac_root_dir, wav_root_dir):
+def process_files_in_parallel(
+    flac_files: Sequence[Path], flac_root_dir: Path, wav_root_dir: Path
+) -> None:
     """
     Uses a thread pool to convert a list of .flac files in parallel.
 
@@ -53,7 +59,7 @@ def process_files_in_parallel(flac_files, flac_root_dir, wav_root_dir):
     # ThreadPoolExecutor is ideal for I/O-bound tasks like reading/writing files.
     with ThreadPoolExecutor() as executor:
         # Submit all conversion tasks to the thread pool.
-        futures = [
+        futures: list[Future[None]] = [
             executor.submit(flac_to_wav, path, flac_root_dir, wav_root_dir) for path in flac_files
         ]
 
@@ -68,24 +74,27 @@ def process_files_in_parallel(flac_files, flac_root_dir, wav_root_dir):
 
 if __name__ == "__main__":
     # Define primary directories using pathlib for cross-platform compatibility.
-    script_dir = Path(__file__).resolve().parent
+    script_dir: Path = Path(__file__).resolve().parent
 
     # Get the project root directory
-    project_root = script_dir.parent
+    project_root: Path = Path(os.getenv("PROJECT_ROOT", str(script_dir.parents[2])))
 
-    base_dir = project_root / "Files" / "Datasets"
-    flac_root_dir = base_dir / "Flac" / "LibriSpeech"
-    wav_root_dir = base_dir / "LibriSpeech"
+    flac_root_dir: Path = project_root / os.getenv(
+        "LIBRISPEECH_FLAC_DIR", "Files/Datasets/Flac/LibriSpeech"
+    )
+    wav_root_dir: Path = project_root / os.getenv(
+        "LIBRISPEECH_WAV_DIR", "Files/Datasets/LibriSpeech"
+    )
 
     # List the dataset splits to be processed.
-    splits = ["train-clean-100", "test-clean"]
+    splits: list[str] = ["train-clean-100", "test-clean"]
 
     for split in splits:
         print(f"\nConverting LibriSpeech {split} from flac to wav format")
 
         # Recursively find all .flac files within the current split's directory.
-        split_dir = flac_root_dir / split
-        flac_files = sorted(list(split_dir.rglob("*.flac")))
+        split_dir: Path = flac_root_dir / split
+        flac_files: list[Path] = sorted(list(split_dir.rglob("*.flac")))
 
         if not flac_files:
             print(f"Warning: No .flac files found in {split_dir}")

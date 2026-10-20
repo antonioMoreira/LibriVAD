@@ -14,6 +14,7 @@ dependencies = [
     "pandas>=3.0.6",
     "praat-textgrids>=1.4.0",
     "pydub>=0.25.1",
+    "python-dotenv>=1.2.4",
     "requests>=2.34.2",
     "rvadfast>=0.10.0",
     "scipy>=1.18.1",
@@ -47,7 +48,7 @@ indent-style = "space"
 python-version = "3.14"
 
 [tool.ty.src]
-include = ["src", "*.py", "Scripts"]
+include = ["src", "*.py"]
 
 
 [dependency-groups]

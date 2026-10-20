@@ -19,22 +19,32 @@ import requests
 from tqdm import tqdm
 
 # --- Hugging Face URLs for additional data ---
-FORCED_ALIGNMENTS_URL: str = (
-    "https://huggingface.co/datasets/LibriVAD/LibriVAD/resolve/main/Files/Forced_alignments.zip"
+FORCED_ALIGNMENTS_URL: str = os.getenv(
+    "FORCED_ALIGNMENTS_URL",
+    "https://huggingface.co/datasets/LibriVAD/LibriVAD/resolve/main/Files/Forced_alignments.zip",
 )
-NOISES_URL: str = "https://huggingface.co/datasets/LibriVAD/LibriVAD/resolve/main/Files/Noises.zip"
+NOISES_URL: str = os.getenv(
+    "NOISES_URL",
+    "https://huggingface.co/datasets/LibriVAD/LibriVAD/resolve/main/Files/Noises.zip",
+)
 
 
 # --- Configuration ---
 # Dictionary mapping the region argument to its corresponding base URL.
 URL_MIRRORS: dict[str, str] = {
-    "US": "https://us.openslr.org/resources/12",
-    "EU": "https://openslr.elda.org/resources/12",
-    "CN": "https://openslr.magicdatatech.com/resources/12",
+    "US": os.getenv("URL_MIRROR_US", "https://us.openslr.org/resources/12"),
+    "EU": os.getenv("URL_MIRROR_EU", "https://openslr.elda.org/resources/12"),
+    "CN": os.getenv("URL_MIRROR_CN", "https://openslr.magicdatatech.com/resources/12"),
 }
 
 # List of files to download and extract.
-FILES_TO_DOWNLOAD: list[str] = ["train-clean-100.tar.gz", "dev-clean.tar.gz", "test-clean.tar.gz"]
+FILES_TO_DOWNLOAD: list[str] = [
+    item.strip()
+    for item in os.getenv(
+        "FILES_TO_DOWNLOAD", "train-clean-100.tar.gz,dev-clean.tar.gz,test-clean.tar.gz"
+    ).split(",")
+    if item.strip()
+]
 
 
 # --- Helper Function for Downloading ---
@@ -176,13 +186,15 @@ def main() -> None:
     base_url: str = URL_MIRRORS[args.region]
 
     # Use pathlib for cross-platform path handling
-    base_dir: Path = Path(__file__).parent.resolve()
-    flac_dir: Path = base_dir / "Files" / "Datasets" / "Flac"
-    scripts_dir: Path = base_dir / "Scripts"
+    base_dir: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).parent.resolve())))
+    flac_dir: Path = base_dir / os.getenv("FLAC_DIR", "Files/Datasets/Flac")
+    scripts_dir: Path = base_dir / os.getenv("SCRIPTS_DIR", "src/librivad/creation_scripts")
 
     # --- Download and extract additional data (Forced Alignments and Noises) ---
-    forced_alignments_dir: Path = base_dir / "Files" / "Forced_alignments"
-    noises_dir: Path = base_dir / "Files" / "Noises"
+    forced_alignments_dir: Path = base_dir / os.getenv(
+        "FORCED_ALIGNMENTS_DIR", "Files/Forced_alignments"
+    )
+    noises_dir: Path = base_dir / os.getenv("NOISES_DIR", "Files/Noises")
 
     download_and_extract_zip(FORCED_ALIGNMENTS_URL, forced_alignments_dir)
     download_and_extract_zip(NOISES_URL, noises_dir)
