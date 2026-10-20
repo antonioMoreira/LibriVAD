@@ -4,20 +4,29 @@
 
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import scipy.io.wavfile as wav
+from dotenv import load_dotenv
+from numpy.typing import NDArray
 from pydub import AudioSegment
 
 from librivad import librispeech_functions as lf
 
-scripts_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+load_dotenv()
+
+scripts_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(scripts_path)
 
+PROJECT_ROOT: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[3])))
+NOISES_DIR: Path = PROJECT_ROOT / os.getenv("NOISES_DIR", "files/Noises")
 
-def categorize(df):
+
+def categorize(df: pd.DataFrame) -> list[NDArray[Any]]:
     """
     Utilizing WHAM! metadata to split them into sub-dataframes based on the
     recording location
@@ -30,12 +39,14 @@ def categorize(df):
                  unique location
     """
 
-    subsets = [np.array(group["utterance_id"]) for _, group in df.groupby("Location ID")]
+    subsets: list[NDArray[Any]] = [
+        np.array(group["utterance_id"]) for _, group in df.groupby("Location ID")
+    ]
 
     return subsets
 
 
-def extract_info(file):
+def extract_info(file: str) -> tuple[str, NDArray[np.int16], int]:
     """
     Function for reading, scaling and returning the audio file, along with its
     length and title. This is used for accelerating the generation process.
@@ -50,16 +61,20 @@ def extract_info(file):
 
     """
 
-    sr, sgn = wav.read(file)
+    _sr: int
+    sgn: NDArray[Any]
+    _sr, sgn = wav.read(file)
 
-    scaled_signal = lf.scale_signal(sgn)
+    scaled_signal: NDArray[np.int16] = lf.scale_signal(sgn)
 
-    sgn_len = len(sgn)
+    sgn_len: int = len(sgn)
 
     return file, scaled_signal, sgn_len
 
 
-def process_subsets(df, wham_folder):
+def process_subsets(
+    df: pd.DataFrame, wham_folder: str
+) -> list[dict[str, tuple[NDArray[np.int16], int]]]:
     """
     Utilizing the categorize function, the extract_info function and threading,
     to accelerate the processing of the files.
@@ -74,32 +89,32 @@ def process_subsets(df, wham_folder):
                            generation process
     """
 
-    subsets = categorize(df)
-    processed_subsets = []
-    m = len(subsets)
-    j = 0
+    subsets: list[NDArray[Any]] = categorize(df)
+    processed_subsets: list[dict[str, tuple[NDArray[np.int16], int]]] = []
+    m: int = len(subsets)
 
-    for subset in subsets:
-        j += 1
-
-        n = len(subset)
-        processed_subset = {}
+    for j, subset in enumerate(subsets, start=1):
+        n: int = len(subset)
+        processed_subset: dict[str, tuple[NDArray[np.int16], int]] = {}
 
         # Utilising asynchronous execution with threads for the files
         with ThreadPoolExecutor() as executor:
-            futures = {
-                executor.submit(extract_info, os.path.join(wham_folder, file)): file
+            futures: dict[Future[tuple[str, NDArray[np.int16], int]], str] = {
+                executor.submit(extract_info, os.path.join(wham_folder, str(file))): str(file)
                 for file in subset
             }
 
             for i, future in enumerate(as_completed(futures)):
                 try:
+                    file: str
+                    signal: NDArray[np.int16]
+                    length: int
                     file, signal, length = future.result()
 
-                    processed_subset[file] = [signal, length]
+                    processed_subset[file] = (signal, length)
 
                     # Calculate and print progress
-                    percent = np.round(100 * (i + 1) / n, 2)
+                    percent: float = float(np.round(100 * (i + 1) / n, 2))
                     print(f"{percent}%", end="\r")
 
                 except Exception as exc:
@@ -111,7 +126,7 @@ def process_subsets(df, wham_folder):
     return processed_subsets
 
 
-def generate_city_noise(df, wham_folder, split, duration):
+def generate_city_noise(df: pd.DataFrame, wham_folder: str, split: str, duration: int) -> None:
     """
     Generates the city noise signal by concatenating audio files until the desired
     duration is reached.
@@ -125,15 +140,19 @@ def generate_city_noise(df, wham_folder, split, duration):
     Saves the generated city noise in the appropriate directory.
     """
 
-    processed_subsets = process_subsets(df, wham_folder)
-    subsets = [list(dict.values()) for dict in processed_subsets]
-    m = len(processed_subsets)
-    len_sum = 0
-    i = 0
-    j = 0
-    city_noise = []
+    processed_subsets: list[dict[str, tuple[NDArray[np.int16], int]]] = process_subsets(
+        df, wham_folder
+    )
+    subsets: list[list[tuple[NDArray[np.int16], int]]] = [
+        list(d.values()) for d in processed_subsets
+    ]
+    m: int = len(processed_subsets)
+    len_sum: int = 0
+    i: int = 0
+    j: int = 0
+    city_noise: list[NDArray[np.int16]] = []
     while len_sum < duration * 16000:
-        signal = subsets[i][j][0]
+        signal: NDArray[np.int16] = subsets[i][j][0]
         len_sum += subsets[i][j][1]
         i += 1
 
@@ -143,26 +162,25 @@ def generate_city_noise(df, wham_folder, split, duration):
 
         city_noise.append(signal)
 
-    city_noise_flat = np.vstack(city_noise)
+    city_noise_flat: NDArray[Any] = np.vstack(city_noise)
     city_noise_flat = city_noise_flat[: duration * 16000]
 
-    save_dir = os.path.join(
-        "LibriVAD", "Files", "Noises", "City_noise", "City_noise_" + split + ".wav"
-    )
+    save_dir: Path = NOISES_DIR / "City_noise" / f"City_noise_{split}.wav"
+    save_dir.parent.mkdir(parents=True, exist_ok=True)
 
     wav.write(save_dir, 16000, city_noise_flat)
 
 
 if __name__ == "__main__":
-    wham_folder = sys.argv[1]
-    metadata = os.path.join(wham_folder, "metadata")
-    noise_meta_tr = os.path.join(metadata, "noise_meta_tr.csv")
-    noise_meta_cv = os.path.join(metadata, "noise_meta_cv.csv")
-    noise_meta_tt = os.path.join(metadata, "noise_meta_tt.csv")
+    wham_folder: str = sys.argv[1]
+    metadata: str = os.path.join(wham_folder, "metadata")
+    noise_meta_tr: str = os.path.join(metadata, "noise_meta_tr.csv")
+    noise_meta_cv: str = os.path.join(metadata, "noise_meta_cv.csv")
+    noise_meta_tt: str = os.path.join(metadata, "noise_meta_tt.csv")
 
-    df_tr = pd.read_csv(noise_meta_tr)
-    df_cv = pd.read_csv(noise_meta_cv)
-    df_tt = pd.read_csv(noise_meta_tt)
+    df_tr: pd.DataFrame = pd.read_csv(noise_meta_tr)
+    df_cv: pd.DataFrame = pd.read_csv(noise_meta_cv)
+    df_tt: pd.DataFrame = pd.read_csv(noise_meta_tt)
 
     generate_city_noise(df_cv, os.path.join(wham_folder, "cv"), "val", 1800)
     generate_city_noise(df_tt, os.path.join(wham_folder, "tt"), "test", 1800)
@@ -170,10 +188,8 @@ if __name__ == "__main__":
 
     # Converting from stereo to mono
     for split in ["val", "test", "train"]:
-        loc_dir = os.path.join(
-            "LibriVAD", "Files", "Noises", "City_noise", "City_noise_" + split + ".wav"
-        )
+        loc_dir: Path = NOISES_DIR / "City_noise" / f"City_noise_{split}.wav"
 
-        sound = AudioSegment.from_wav(loc_dir)
+        sound: Any = AudioSegment.from_wav(str(loc_dir))
         sound = sound.set_channels(1)
-        sound.export(loc_dir, format="wav")
+        sound.export(str(loc_dir), format="wav")

@@ -7,21 +7,33 @@ import glob
 import json
 import os
 import sys
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
 
 import librosa
 import numpy as np
 import scipy.io.wavfile as wav
+from dotenv import load_dotenv
+from numpy.typing import NDArray
 from rVADfast import rVADfast
 
 from librivad import librispeech_functions as lf
 
-scripts_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+load_dotenv()
+
+scripts_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(scripts_path)
 
-vad = rVADfast()
+vad: Any = rVADfast()
 
 
-def evaluate_file(LibriLight_file, snr_threshold, sr_threshold=0.15, Verbose=False):
+def evaluate_file(
+    LibriLight_file: str,
+    snr_threshold: float,
+    sr_threshold: float = 0.15,
+    Verbose: bool = False,
+) -> bool:
     """
     Function for evaluating if a LibriLight file meets the requirements to be
     used for the babble noise creation
@@ -40,22 +52,21 @@ def evaluate_file(LibriLight_file, snr_threshold, sr_threshold=0.15, Verbose=Fal
     """
 
     # Opening the corresponding to the flac, json file
-    f = open(LibriLight_file[:-4] + "json")
-    data = json.load(f)
-    f.close()
+    with open(LibriLight_file[:-4] + "json") as f:
+        data: dict[str, Any] = json.load(f)
 
     # Extracting information of interest
-    snr = data["snr"]
-    genre = data["book_meta"]["meta_genre"]
-    speech_seg = np.array(data["voice_activity"])
-    signal_duration = speech_seg[-1, 1]
+    snr: float = float(data["snr"])
+    genre: str = str(data["book_meta"]["meta_genre"])
+    speech_seg: NDArray[Any] = np.array(data["voice_activity"])
+    signal_duration: float = float(speech_seg[-1, 1])
 
     # Calculating duration of speech and silence ratio
-    speech_duration = np.sum(speech_seg[:, 1] - speech_seg[:, 0])
-    silence_ratio = 1 - speech_duration / signal_duration
+    speech_duration: float = float(np.sum(speech_seg[:, 1] - speech_seg[:, 0]))
+    silence_ratio: float = 1.0 - speech_duration / signal_duration
 
     # Evaluating whether file meets the requirements
-    flag = 0
+    flag: int = 0
     if snr > snr_threshold and silence_ratio < sr_threshold:
         flag = 1
 
@@ -75,7 +86,9 @@ def evaluate_file(LibriLight_file, snr_threshold, sr_threshold=0.15, Verbose=Fal
         return False
 
 
-def dynamic_range_compression(audio, threshold=-10, ratio=4):
+def dynamic_range_compression(
+    audio: NDArray[Any], threshold: float = -10, ratio: float = 4
+) -> NDArray[np.int16]:
     """
     Basic dynamic range compression of audio function
 
@@ -90,27 +103,29 @@ def dynamic_range_compression(audio, threshold=-10, ratio=4):
     """
 
     # Convert threshold from db to 16 bit sound file amplitude
-    threshold_amp = 10 ** (threshold / 20) * 32767
+    threshold_amp: float = 10 ** (threshold / 20) * 32767
 
     # Apply compression
-    compressed_audio = np.copy(audio)
-    above_threshold = audio > threshold_amp
+    compressed_audio: NDArray[Any] = np.copy(audio)
+    above_threshold: NDArray[np.bool_] = audio > threshold_amp
     compressed_audio[above_threshold] = (
         threshold_amp + (audio[above_threshold] - threshold_amp) / ratio
     )
 
-    bellow_threshold = audio < -threshold_amp
+    bellow_threshold: NDArray[np.bool_] = audio < -threshold_amp
     compressed_audio[bellow_threshold] = (
         -threshold_amp + (audio[bellow_threshold] + threshold_amp) / ratio
     )
 
     # And scaling it up again
-    output = lf.scale_signal(compressed_audio)
+    output: NDArray[np.int16] = lf.scale_signal(compressed_audio)
 
     return output
 
 
-def extract_silence(path_to_audiofile, return_og=False):
+def extract_silence(
+    path_to_audiofile: str | Path, return_og: bool = False
+) -> tuple[NDArray[Any], int | float] | tuple[NDArray[Any], NDArray[Any], int | float]:
     """
     Function for utilising the rVAD model for identifying the silent parts of
     a clean audio file. Returns the waveform of the audio file, but with the
@@ -128,18 +143,21 @@ def extract_silence(path_to_audiofile, return_og=False):
     """
 
     # Reading the audio file and extracting VAD labels per 10ms
+    og_sgn: NDArray[Any]
+    sr: int | float
     og_sgn, sr = librosa.load(path_to_audiofile, sr=None)
+    vad_labels: NDArray[Any]
     vad_labels, _ = vad(og_sgn, sr)
 
     # Adjusting the VAD labels from every 10ms to each sample
-    label_ps = np.zeros(len(og_sgn))
-    samp_per_10ms = int(sr / 100)
+    label_ps: NDArray[np.float64] = np.zeros(len(og_sgn))
+    samp_per_10ms: int = int(sr / 100)
     for i in range(len(vad_labels)):
         if vad_labels[i] == 1:
             label_ps[samp_per_10ms * i : samp_per_10ms * (i + 1)] = 1
 
     # Removing silent samples from the original waveform
-    silence_omitted_sgn = og_sgn[label_ps.astype(bool)]
+    silence_omitted_sgn: NDArray[Any] = og_sgn[label_ps.astype(bool)]
 
     if return_og:
         return silence_omitted_sgn, og_sgn, sr
@@ -148,14 +166,14 @@ def extract_silence(path_to_audiofile, return_og=False):
 
 
 def create_babble_noise(
-    list_of_paths,
-    duration,
-    write=False,
-    save_dir=None,
-    title=None,
-    s_rate=16000,
-    remove_silence=True,
-):
+    list_of_paths: Sequence[str],
+    duration: int,
+    write: bool = False,
+    save_dir: str | None = None,
+    title: str | None = None,
+    s_rate: int = 16000,
+    remove_silence: bool = True,
+) -> tuple[int, list[str]]:
     """
     Function for creating babble noise.
 
@@ -194,15 +212,15 @@ def create_babble_noise(
                            utilised
     """
 
-    Speaker_ids = []
+    Speaker_ids: list[str] = []
 
-    babble_length = s_rate * duration
-    num_voices = 6
-    voices = np.zeros((num_voices, babble_length))
+    babble_length: int = s_rate * duration
+    num_voices: int = 6
+    voices: NDArray[np.float64] = np.zeros((num_voices, babble_length))
 
-    i = 0
+    i: int = 0
 
-    speaker_id = list_of_paths[0].split("/")[-3]
+    speaker_id: str = list_of_paths[0].split("/")[-3]
     Speaker_ids.append(speaker_id)
 
     # Iterating over each channel
@@ -210,24 +228,28 @@ def create_babble_noise(
         print(f"Channel {j + 1}/{num_voices}")
 
         # Initializing
-        channel_len = 0
-        concat_voices = []
+        channel_len: int = 0
+        concat_voices: list[NDArray[Any]] = []
+        current_file: str = list_of_paths[i]
 
         # Storing signals until the desired duration is reached
         while channel_len < babble_length:
             current_file = list_of_paths[i]
-            silence_ratio = 0.15
+            silence_ratio: float = 0.15
 
             # If silence is manually removed the silence ratio condition is not
             # utilized
             if remove_silence:
-                silence_ratio = 1
+                silence_ratio = 1.0
 
             # If the current file satisfies the desired conditions
-            if evaluate_file(current_file, snr_threshold=15, sr_threshold=silence_ratio) == True:
+            if evaluate_file(current_file, snr_threshold=15, sr_threshold=silence_ratio):
+                signal: NDArray[Any]
+                sr: int | float
                 # Either load the file and remove the silence
                 if remove_silence:
-                    signal, sr = extract_silence(current_file)
+                    res: tuple[Any, ...] = extract_silence(current_file)
+                    signal, sr = res[0], res[1]
 
                 # Or just load the file
                 else:
@@ -237,14 +259,15 @@ def create_babble_noise(
                 signal /= lf.RMS(signal)
 
                 # Remove intro and outro in appropriate cases
-                if len(signal) > 40 * sr:
-                    signal = signal[30 * sr : -10 * sr]
+                sr_int: int = int(sr)
+                if len(signal) > 40 * sr_int:
+                    signal = signal[30 * sr_int : -10 * sr_int]
 
                 # Increase counter
                 channel_len += len(signal)
                 i += 1
 
-                loading_percent = np.round(100 * channel_len / babble_length, 2)
+                loading_percent: float = float(np.round(100 * channel_len / babble_length, 2))
                 print(f"{np.min([loading_percent, 100.00])}%", end="\r")
 
                 concat_voices.append(signal)
@@ -253,7 +276,7 @@ def create_babble_noise(
                 i += 1
 
         # Concatenating the stored signals
-        concat_voices_flat = np.hstack(concat_voices)
+        concat_voices_flat: NDArray[Any] = np.hstack(concat_voices)
 
         # Trimming channel to the desired duration and standardizing
         concat_voices_flat = concat_voices_flat[:babble_length]
@@ -267,7 +290,7 @@ def create_babble_noise(
         speaker_id = current_file.split("/")[-3]
         Speaker_ids.append(speaker_id)
 
-        next_speaker_id = list_of_paths[i].split("/")[-3]
+        next_speaker_id: str = list_of_paths[i].split("/")[-3]
 
         while next_speaker_id == speaker_id:
             i += 1
@@ -276,30 +299,39 @@ def create_babble_noise(
         if j < num_voices - 1:
             Speaker_ids.append(next_speaker_id)
 
-    energy = np.mean(voices * voices, axis=1)
-    max_eng = np.max(energy)
+    _energy: NDArray[Any] = np.mean(voices * voices, axis=1)
+    _max_eng: Any = np.max(_energy)
 
     # Averaging channels to create babble noise
-    average = np.array(np.mean(voices, axis=0))
-    babble_noise = lf.scale_signal(average)
+    average: NDArray[Any] = np.array(np.mean(voices, axis=0))
+    babble_noise: NDArray[np.int16] = lf.scale_signal(average)
 
-    if write:
+    if write and save_dir is not None and title is not None:
         wav.write(save_dir + "/" + title, s_rate, babble_noise)
 
     return i, Speaker_ids
 
 
 if __name__ == "__main__":
-    LibriLight_medium_dir = sys.argv[1]  # Directory of the LibriLight files
-    save_dir = sys.argv[2]  # Directory for saving the babble noise splits
+    project_root: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[3])))
+    default_save_dir: str = str(
+        project_root / os.getenv("NOISES_DIR", "files/Noises") / "Babble_noise"
+    )
+
+    LibriLight_medium_dir: str = sys.argv[1]  # Directory of the LibriLight files
+    save_dir: str = (
+        sys.argv[2] if len(sys.argv) > 2 else default_save_dir
+    )  # Directory for saving the babble noise splits
 
     # Listing and sorting the LibriLight file paths
     print("Searching for files...")
-    paths = glob.glob(LibriLight_medium_dir + "/*/*/*.flac")
+    paths: list[str] = glob.glob(LibriLight_medium_dir + "/*/*/*.flac")
     paths.sort()
 
     # Creating Babble_noise_train.wav
     print("\nFor the Babble_noise_train signal:\n")
+    end_index: int
+    speakers: list[str]
     end_index, speakers = create_babble_noise(
         paths,
         int(3 * 3600),
@@ -311,12 +343,13 @@ if __name__ == "__main__":
 
     for i in range(0, len(speakers) - 1, 2):
         print(
-            f"Channel {int((i + 2) / 2)} starts with speaker {speakers[i]} and ends with speaker {speakers[i + 1]}"
+            f"Channel {int((i + 2) / 2)} starts with speaker {speakers[i]} and "
+            f"ends with speaker {speakers[i + 1]}"
         )
 
     end_index += 1
 
-    paths_val = paths[end_index:]
+    paths_val: list[str] = paths[end_index:]
 
     # Creating Babble_noise_train.wav
     print("\nFor the Babble_noise_val signal:\n")
@@ -326,12 +359,13 @@ if __name__ == "__main__":
 
     for i in range(0, len(speakers) - 1, 2):
         print(
-            f"Channel {int((i + 2) / 2)} starts with speaker {speakers[i]} and ends with speaker {speakers[i + 1]}"
+            f"Channel {int((i + 2) / 2)} starts with speaker {speakers[i]} and "
+            f"ends with speaker {speakers[i + 1]}"
         )
 
     end_index += 1
 
-    paths_test = paths_val[end_index:]
+    paths_test: list[str] = paths_val[end_index:]
 
     # Creating Babble_noise_train.wav
     print("\nFor the Babble_noise_test signal:\n")

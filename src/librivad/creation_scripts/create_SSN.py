@@ -9,26 +9,33 @@
 import glob
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import librosa
 import numpy as np
 import scipy.io.wavfile as wav
 import scipy.signal as signal
+from dotenv import load_dotenv
+from numpy.typing import NDArray
 from tqdm import tqdm
 
 from librivad import librispeech_functions as lf
 
+load_dotenv()
+
 # Add the parent directory to the system path to import local modules.
-scripts_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+scripts_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(scripts_path)
 
 # --- Configuration ---
-# The choice of speakers is based on Signal-to-Noise Ratio (SNR), Silence Ratio (SR), speech duration and the Genre of the audio source
+# The choice of speakers is based on Signal-to-Noise Ratio (SNR), Silence Ratio (SR),
+# speech duration and the Genre of the audio source
 # (i.e. SNR > 15, SR < 0.1, speech duration > 10 min, Genre = Literature)
 
 # Dictionary mapping each data split to the specific speaker IDs used for the SSN.
-SPEAKER_IDS = {
+SPEAKER_IDS: dict[str, list[str]] = {
     "train": [
         "1085",
         "1401",
@@ -54,24 +61,26 @@ SPEAKER_IDS = {
 }
 
 # The target duration in seconds for the final SSN signal of each split.
-SEGMENT_DURATIONS_SEC = {
+SEGMENT_DURATIONS_SEC: dict[str, int] = {
     "train": 3600,  # 60 minutes
     "val": 600,  # 10 minutes
     "test": 600,  # 10 minutes
 }
 
 # The order of the LPC analysis.
-LPC_ORDER = 12
+LPC_ORDER: int = 12
 # The sample rate for all audio processing.
-SAMPLE_RATE = 16000
+SAMPLE_RATE: int = 16000
 
 # Define the source and destination directories relative to the project root.
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATASET_DIR = PROJECT_ROOT / "Files" / "Datasets" / "LibriSpeech"
-OUTPUT_DIR = PROJECT_ROOT / "Files" / "Noises" / "SSN_noise"
+PROJECT_ROOT: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[3])))
+DATASET_DIR: Path = PROJECT_ROOT / os.getenv("LIBRISPEECH_WAV_DIR", "files/Datasets/LibriSpeech")
+OUTPUT_DIR: Path = PROJECT_ROOT / os.getenv("NOISES_DIR", "files/Noises") / "SSN_noise"
 
 
-def generate_ssn_for_split(split_name, speaker_ids, segment_duration_sec):
+def generate_ssn_for_split(
+    split_name: str, speaker_ids: Sequence[str], segment_duration_sec: int
+) -> None:
     """
     Performs the full SSN generation pipeline for a single data split.
 
@@ -82,22 +91,24 @@ def generate_ssn_for_split(split_name, speaker_ids, segment_duration_sec):
     """
     print(f"\n--- Generating SSN for '{split_name}' split ---")
 
-    all_speaker_ssn_segments = []
+    all_speaker_ssn_segments: list[NDArray[Any]] = []
 
     # Iterate through each specified speaker to create their unique noise segment.
     for speaker_id in tqdm(speaker_ids, desc=f"Processing speakers for {split_name}"):
         # 1. Find all audio files for the current speaker.
-        search_pattern = str(DATASET_DIR / "**" / speaker_id / "**" / "*.wav")
-        speaker_files = glob.glob(search_pattern, recursive=True)
+        search_pattern: str = str(DATASET_DIR / "**" / speaker_id / "**" / "*.wav")
+        speaker_files: list[str] = glob.glob(search_pattern, recursive=True)
 
         if not speaker_files:
             print(f"\nWarning: No audio files found for speaker {speaker_id}. Skipping.")
             continue
 
         # 2. Load and concatenate all speech from this one speaker.
-        speech_segments = []
+        speech_segments: list[NDArray[Any]] = []
         for path in speaker_files:
             try:
+                sr: int
+                sgn: NDArray[Any]
                 sr, sgn = wav.read(path)
                 if sr == SAMPLE_RATE:
                     speech_segments.append(sgn)
@@ -108,20 +119,22 @@ def generate_ssn_for_split(split_name, speaker_ids, segment_duration_sec):
             print(f"\nWarning: Could not load any valid audio for speaker {speaker_id}. Skipping.")
             continue
 
-        speaker_full_signal = np.concatenate(speech_segments)
+        speaker_full_signal: NDArray[Any] = np.concatenate(speech_segments)
 
         # 3. Perform personalized LPC analysis for this speaker.
-        lpc_coefficients = librosa.lpc(speaker_full_signal.astype(float), order=LPC_ORDER)
+        lpc_coefficients: NDArray[Any] = librosa.lpc(
+            speaker_full_signal.astype(float), order=LPC_ORDER
+        )
 
         # 4. Generate white noise for this segment.
-        noise_duration = segment_duration_sec + 5  # Extra for edge effects
-        white_noise = np.random.normal(0, 1, int(noise_duration * SAMPLE_RATE))
+        noise_duration: int = segment_duration_sec + 5  # Extra for edge effects
+        white_noise: NDArray[np.float64] = np.random.normal(0, 1, int(noise_duration * SAMPLE_RATE))
 
         # 5. Filter the noise with the speaker's personal LPC filter.
-        speaker_ssn = signal.lfilter([1], lpc_coefficients, white_noise)
+        speaker_ssn: NDArray[Any] = np.asarray(signal.lfilter([1], lpc_coefficients, white_noise))
 
         # 6. Trim to the exact segment duration and append to the list.
-        target_samples = int(segment_duration_sec * SAMPLE_RATE)
+        target_samples: int = int(segment_duration_sec * SAMPLE_RATE)
         all_speaker_ssn_segments.append(speaker_ssn[:target_samples])
 
     if not all_speaker_ssn_segments:
@@ -130,14 +143,14 @@ def generate_ssn_for_split(split_name, speaker_ids, segment_duration_sec):
 
     # 7. Concatenate all individual speaker segments into the final composite signal.
     print("Concatenating all speaker segments...")
-    final_ssn_composite = np.concatenate(all_speaker_ssn_segments)
+    final_ssn_composite: NDArray[Any] = np.concatenate(all_speaker_ssn_segments)
 
     # 8. Normalize, scale, and save the final SSN file.
     print("Normalizing and saving the final SSN file...")
-    final_ssn_scaled = lf.scale_signal(final_ssn_composite)
+    final_ssn_scaled: NDArray[np.int16] = lf.scale_signal(final_ssn_composite)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = OUTPUT_DIR / f"SSN_noise_temp_{split_name}.wav"
+    output_path: Path = OUTPUT_DIR / f"SSN_noise_temp_{split_name}.wav"
 
     wav.write(output_path, SAMPLE_RATE, final_ssn_scaled)
     print(f"Successfully saved composite SSN to: {output_path}")

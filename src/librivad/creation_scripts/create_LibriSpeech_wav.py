@@ -5,8 +5,11 @@ from pathlib import Path
 from typing import Any
 
 import soundfile as sf
+from dotenv import load_dotenv
 from numpy.typing import NDArray
 from tqdm import tqdm
+
+load_dotenv()
 
 
 def flac_to_wav(flac_path: Path, flac_root_dir: Path, wav_root_dir: Path) -> None:
@@ -80,10 +83,10 @@ if __name__ == "__main__":
     project_root: Path = Path(os.getenv("PROJECT_ROOT", str(script_dir.parents[2])))
 
     flac_root_dir: Path = project_root / os.getenv(
-        "LIBRISPEECH_FLAC_DIR", "Files/Datasets/Flac/LibriSpeech"
+        "LIBRISPEECH_FLAC_DIR", "files/Datasets/Flac/LibriSpeech"
     )
     wav_root_dir: Path = project_root / os.getenv(
-        "LIBRISPEECH_WAV_DIR", "Files/Datasets/LibriSpeech"
+        "LIBRISPEECH_WAV_DIR", "files/Datasets/LibriSpeech"
     )
 
     # List the dataset splits to be processed.

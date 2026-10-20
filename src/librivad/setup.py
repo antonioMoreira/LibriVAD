@@ -16,7 +16,10 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from dotenv import load_dotenv
 from tqdm import tqdm
+
+load_dotenv()
 
 # --- Hugging Face URLs for additional data ---
 FORCED_ALIGNMENTS_URL: str = os.getenv(
@@ -186,15 +189,15 @@ def main() -> None:
     base_url: str = URL_MIRRORS[args.region]
 
     # Use pathlib for cross-platform path handling
-    base_dir: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).parent.resolve())))
-    flac_dir: Path = base_dir / os.getenv("FLAC_DIR", "Files/Datasets/Flac")
+    base_dir: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[2])))
+    flac_dir: Path = base_dir / os.getenv("FLAC_DIR", "files/Datasets/Flac")
     scripts_dir: Path = base_dir / os.getenv("SCRIPTS_DIR", "src/librivad/creation_scripts")
 
     # --- Download and extract additional data (Forced Alignments and Noises) ---
     forced_alignments_dir: Path = base_dir / os.getenv(
-        "FORCED_ALIGNMENTS_DIR", "Files/Forced_alignments"
+        "FORCED_ALIGNMENTS_DIR", "files/Forced_alignments"
     )
-    noises_dir: Path = base_dir / os.getenv("NOISES_DIR", "Files/Noises")
+    noises_dir: Path = base_dir / os.getenv("NOISES_DIR", "files/Noises")
 
     download_and_extract_zip(FORCED_ALIGNMENTS_URL, forced_alignments_dir)
     download_and_extract_zip(NOISES_URL, noises_dir)

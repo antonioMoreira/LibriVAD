@@ -11,10 +11,13 @@ from typing import Any
 
 import numpy as np
 import scipy.io.wavfile as wav
+from dotenv import load_dotenv
 from numpy.typing import NDArray
 from tqdm import tqdm
 
 from librivad import librispeech_functions as lf
+
+load_dotenv()
 
 # Add the parent 'Scripts' directory to the system path to import local modules.
 scripts_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -205,10 +208,10 @@ if __name__ == "__main__":
     project_root: Path = Path(os.getenv("PROJECT_ROOT", str(script_dir.parents[2])))
 
     # Build all necessary paths from the project root directory.
-    wav_dir: Path = project_root / os.getenv("LIBRISPEECH_WAV_DIR", "Files/Datasets/LibriSpeech")
+    wav_dir: Path = project_root / os.getenv("LIBRISPEECH_WAV_DIR", "files/Datasets/LibriSpeech")
     silence_path: Path = wav_dir / "train100_silence.wav"
     alignments_dir: Path = project_root / os.getenv(
-        "LIBRISPEECH_ALIGNMENTS_DIR", "Files/Forced_alignments/librispeech_alignments"
+        "LIBRISPEECH_ALIGNMENTS_DIR", "files/Forced_alignments/librispeech_alignments"
     )
     unaligned_path: Path = alignments_dir / "unaligned.txt"
 

@@ -21,10 +21,13 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from dotenv import load_dotenv
 from numpy.typing import NDArray
 from tqdm import tqdm
 
 from librivad import librispeech_functions as lf
+
+load_dotenv()
 
 # Add the parent 'Scripts' directory to the system path to import local modules.
 scripts_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -200,9 +203,9 @@ if __name__ == "__main__":
     project_root: Path = Path(os.getenv("PROJECT_ROOT", str(script_dir.parents[2])))
 
     # Build all necessary base paths from the project root directory.
-    datasets_root: Path = project_root / os.getenv("DATASETS_DIR", "Files/Datasets")
+    datasets_root: Path = project_root / os.getenv("DATASETS_DIR", "files/Datasets")
     alignments_root_dir: Path = project_root / os.getenv(
-        "LIBRISPEECH_ALIGNMENTS_DIR", "Files/Forced_alignments/librispeech_alignments"
+        "LIBRISPEECH_ALIGNMENTS_DIR", "files/Forced_alignments/librispeech_alignments"
     )
     unaligned_path: Path = alignments_root_dir / "unaligned.txt"
 
