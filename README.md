@@ -16,7 +16,7 @@ tags:
 ---
 
 > [!NOTE]
-> This repository was cloned from Hugging Face using `git clone https://huggingface.co/datasets/LibriVAD/LibriVAD` and some refactorings were made.
+> This repository was cloned from Hugging Face using `git clone https://huggingface.co/datasets/LibriVAD/LibriVAD` and some refactorings were made. Reference paper: [LibriVAD Paper (PDF)](docs/LibriVAD_2512.17281v1.pdf).
 
 # LibriVAD Dataset Generation
 
@@ -54,7 +54,3 @@ This repository contains the scripts necessary to generate the LibriVAD dataset,
 
 > [!WARNING]
 > The initial space requirement for the setup process (before generating the final dataset) is approximately **61GB**. Please ensure you have sufficient disk space.
-
-## Citation
-
-I. Stylianou, A.K. Sarkar, N. Dawalatabad, J. Glass, and Z.-H. Tan, "LibriVAD: A Scalable Open Dataset with Deep Learning Benchmarks for Voice Activity Detection," arXiv preprint arXiv:2512.17281 (2025).
