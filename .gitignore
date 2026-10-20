@@ -1,2 +1,5 @@
 .ruff_cache
 .venv
+.tmp/
+files/
+Results/

@@ -22,8 +22,8 @@ load_dotenv()
 scripts_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(scripts_path)
 
-PROJECT_ROOT: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[3])))
-NOISES_DIR: Path = PROJECT_ROOT / os.getenv("NOISES_DIR", "files/Noises")
+PROJECT_ROOT: Path = Path(os.environ["PROJECT_ROOT"])
+NOISES_DIR: Path = PROJECT_ROOT / os.environ["NOISES_DIR"]
 
 
 def categorize(df: pd.DataFrame) -> list[NDArray[Any]]:

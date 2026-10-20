@@ -73,9 +73,9 @@ LPC_ORDER: int = 12
 SAMPLE_RATE: int = 16000
 
 # Define the source and destination directories relative to the project root.
-PROJECT_ROOT: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[3])))
-DATASET_DIR: Path = PROJECT_ROOT / os.getenv("LIBRISPEECH_WAV_DIR", "files/Datasets/LibriSpeech")
-OUTPUT_DIR: Path = PROJECT_ROOT / os.getenv("NOISES_DIR", "files/Noises") / "SSN_noise"
+PROJECT_ROOT: Path = Path(os.environ["PROJECT_ROOT"])
+DATASET_DIR: Path = PROJECT_ROOT / os.environ["LIBRISPEECH_WAV_DIR"]
+OUTPUT_DIR: Path = PROJECT_ROOT / os.environ["NOISES_DIR"] / "SSN_noise"
 
 
 def generate_ssn_for_split(

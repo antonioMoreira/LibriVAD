@@ -203,16 +203,12 @@ def create_LibriSpeechConcat(list_of_paths: list[str], silence_path: str | Path)
 
 
 if __name__ == "__main__":
-    # Define paths relative to this script's location
-    script_dir: Path = Path(__file__).resolve().parent
-    project_root: Path = Path(os.getenv("PROJECT_ROOT", str(script_dir.parents[2])))
+    project_root: Path = Path(os.environ["PROJECT_ROOT"])
 
     # Build all necessary paths from the project root directory.
-    wav_dir: Path = project_root / os.getenv("LIBRISPEECH_WAV_DIR", "files/Datasets/LibriSpeech")
+    wav_dir: Path = project_root / os.environ["LIBRISPEECH_WAV_DIR"]
     silence_path: Path = wav_dir / "train100_silence.wav"
-    alignments_dir: Path = project_root / os.getenv(
-        "LIBRISPEECH_ALIGNMENTS_DIR", "files/Forced_alignments/librispeech_alignments"
-    )
+    alignments_dir: Path = project_root / os.environ["LIBRISPEECH_ALIGNMENTS_DIR"]
     unaligned_path: Path = alignments_dir / "unaligned.txt"
 
     print("\nSearching LibriSpeech files...")

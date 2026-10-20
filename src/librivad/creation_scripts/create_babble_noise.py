@@ -313,10 +313,8 @@ def create_babble_noise(
 
 
 if __name__ == "__main__":
-    project_root: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[3])))
-    default_save_dir: str = str(
-        project_root / os.getenv("NOISES_DIR", "files/Noises") / "Babble_noise"
-    )
+    project_root: Path = Path(os.environ["PROJECT_ROOT"])
+    default_save_dir: str = str(project_root / os.environ["NOISES_DIR"] / "Babble_noise")
 
     LibriLight_medium_dir: str = sys.argv[1]  # Directory of the LibriLight files
     save_dir: str = (

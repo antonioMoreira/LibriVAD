@@ -22,31 +22,21 @@ from tqdm import tqdm
 load_dotenv()
 
 # --- Hugging Face URLs for additional data ---
-FORCED_ALIGNMENTS_URL: str = os.getenv(
-    "FORCED_ALIGNMENTS_URL",
-    "https://huggingface.co/datasets/LibriVAD/LibriVAD/resolve/main/Files/Forced_alignments.zip",
-)
-NOISES_URL: str = os.getenv(
-    "NOISES_URL",
-    "https://huggingface.co/datasets/LibriVAD/LibriVAD/resolve/main/Files/Noises.zip",
-)
+FORCED_ALIGNMENTS_URL: str = os.environ["FORCED_ALIGNMENTS_URL"]
+NOISES_URL: str = os.environ["NOISES_URL"]
 
 
 # --- Configuration ---
 # Dictionary mapping the region argument to its corresponding base URL.
 URL_MIRRORS: dict[str, str] = {
-    "US": os.getenv("URL_MIRROR_US", "https://us.openslr.org/resources/12"),
-    "EU": os.getenv("URL_MIRROR_EU", "https://openslr.elda.org/resources/12"),
-    "CN": os.getenv("URL_MIRROR_CN", "https://openslr.magicdatatech.com/resources/12"),
+    "US": os.environ["URL_MIRROR_US"],
+    "EU": os.environ["URL_MIRROR_EU"],
+    "CN": os.environ["URL_MIRROR_CN"],
 }
 
 # List of files to download and extract.
 FILES_TO_DOWNLOAD: list[str] = [
-    item.strip()
-    for item in os.getenv(
-        "FILES_TO_DOWNLOAD", "train-clean-100.tar.gz,dev-clean.tar.gz,test-clean.tar.gz"
-    ).split(",")
-    if item.strip()
+    item.strip() for item in os.environ["FILES_TO_DOWNLOAD"].split(",") if item.strip()
 ]
 
 
@@ -189,15 +179,13 @@ def main() -> None:
     base_url: str = URL_MIRRORS[args.region]
 
     # Use pathlib for cross-platform path handling
-    base_dir: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[2])))
-    flac_dir: Path = base_dir / os.getenv("FLAC_DIR", "files/Datasets/Flac")
-    scripts_dir: Path = base_dir / os.getenv("SCRIPTS_DIR", "src/librivad/creation_scripts")
+    base_dir: Path = Path(os.environ["PROJECT_ROOT"])
+    flac_dir: Path = base_dir / os.environ["FLAC_DIR"]
+    scripts_dir: Path = base_dir / os.environ["SCRIPTS_DIR"]
 
     # --- Download and extract additional data (Forced Alignments and Noises) ---
-    forced_alignments_dir: Path = base_dir / os.getenv(
-        "FORCED_ALIGNMENTS_DIR", "files/Forced_alignments"
-    )
-    noises_dir: Path = base_dir / os.getenv("NOISES_DIR", "files/Noises")
+    forced_alignments_dir: Path = base_dir / os.environ["FORCED_ALIGNMENTS_DIR"]
+    noises_dir: Path = base_dir / os.environ["NOISES_DIR"]
 
     download_and_extract_zip(FORCED_ALIGNMENTS_URL, forced_alignments_dir)
     download_and_extract_zip(NOISES_URL, noises_dir)

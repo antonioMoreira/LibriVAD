@@ -24,13 +24,11 @@ load_dotenv()
 scripts_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(scripts_path)
 
-PROJECT_ROOT: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[3])))
-DEFAULT_DATASETS_DIR: Path = PROJECT_ROOT / os.getenv("DATASETS_DIR", "files/Datasets")
-LIBRISPEECH_ALIGNMENTS_DIR: Path = PROJECT_ROOT / os.getenv(
-    "LIBRISPEECH_ALIGNMENTS_DIR", "files/Forced_alignments/librispeech_alignments"
-)
-NOISES_DIR: Path = PROJECT_ROOT / os.getenv("NOISES_DIR", "files/Noises")
-DEFAULT_RESULTS_DIR: Path = PROJECT_ROOT / os.getenv("RESULTS_DIR", "Results")
+PROJECT_ROOT: Path = Path(os.environ["PROJECT_ROOT"])
+DEFAULT_DATASETS_DIR: Path = PROJECT_ROOT / os.environ["DATASETS_DIR"]
+LIBRISPEECH_ALIGNMENTS_DIR: Path = PROJECT_ROOT / os.environ["LIBRISPEECH_ALIGNMENTS_DIR"]
+NOISES_DIR: Path = PROJECT_ROOT / os.environ["NOISES_DIR"]
+DEFAULT_RESULTS_DIR: Path = PROJECT_ROOT / os.environ["RESULTS_DIR"]
 
 
 def load_files(dataset: str, dataset_dir: str | Path, split: str) -> list[str]:

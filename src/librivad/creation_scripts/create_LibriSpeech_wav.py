@@ -76,18 +76,11 @@ def process_files_in_parallel(
 
 
 if __name__ == "__main__":
-    # Define primary directories using pathlib for cross-platform compatibility.
-    script_dir: Path = Path(__file__).resolve().parent
-
     # Get the project root directory
-    project_root: Path = Path(os.getenv("PROJECT_ROOT", str(script_dir.parents[2])))
+    project_root: Path = Path(os.environ["PROJECT_ROOT"])
 
-    flac_root_dir: Path = project_root / os.getenv(
-        "LIBRISPEECH_FLAC_DIR", "files/Datasets/Flac/LibriSpeech"
-    )
-    wav_root_dir: Path = project_root / os.getenv(
-        "LIBRISPEECH_WAV_DIR", "files/Datasets/LibriSpeech"
-    )
+    flac_root_dir: Path = project_root / os.environ["LIBRISPEECH_FLAC_DIR"]
+    wav_root_dir: Path = project_root / os.environ["LIBRISPEECH_WAV_DIR"]
 
     # List the dataset splits to be processed.
     splits: list[str] = ["train-clean-100", "test-clean"]

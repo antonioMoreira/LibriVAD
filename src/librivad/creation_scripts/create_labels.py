@@ -198,15 +198,11 @@ def create_label_for_file(wav_path_str: str | Path, alignments_root_dir: str | P
 
 
 if __name__ == "__main__":
-    # Define paths relative to this script's location for robustness.
-    script_dir: Path = Path(__file__).resolve().parent
-    project_root: Path = Path(os.getenv("PROJECT_ROOT", str(script_dir.parents[2])))
+    project_root: Path = Path(os.environ["PROJECT_ROOT"])
 
     # Build all necessary base paths from the project root directory.
-    datasets_root: Path = project_root / os.getenv("DATASETS_DIR", "files/Datasets")
-    alignments_root_dir: Path = project_root / os.getenv(
-        "LIBRISPEECH_ALIGNMENTS_DIR", "files/Forced_alignments/librispeech_alignments"
-    )
+    datasets_root: Path = project_root / os.environ["DATASETS_DIR"]
+    alignments_root_dir: Path = project_root / os.environ["LIBRISPEECH_ALIGNMENTS_DIR"]
     unaligned_path: Path = alignments_root_dir / "unaligned.txt"
 
     datasets_to_process: list[str] = ["LibriSpeech", "LibriSpeechConcat"]

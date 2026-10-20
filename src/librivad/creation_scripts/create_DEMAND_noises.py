@@ -12,9 +12,9 @@ from numpy.typing import NDArray
 
 load_dotenv()
 
-PROJECT_ROOT: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[3])))
-DEMAND_dir: str = str(PROJECT_ROOT / os.getenv("DEMAND_DIR", "files/Datasets/DEMAND")) + "/"
-noises_dir: str = str(PROJECT_ROOT / os.getenv("NOISES_DIR", "files/Noises")) + "/"
+PROJECT_ROOT: Path = Path(os.environ["PROJECT_ROOT"])
+DEMAND_dir: str = str(PROJECT_ROOT / os.environ["DEMAND_DIR"]) + "/"
+noises_dir: str = str(PROJECT_ROOT / os.environ["NOISES_DIR"]) + "/"
 
 
 def downsample_cafe() -> None:

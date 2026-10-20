@@ -181,12 +181,10 @@ def plot_validation(
 def main() -> None:
     """Main function to drive the validation process."""
     # Define root paths for the project, datasets, and labels.
-    project_root: Path = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[2])))
-    datasets_root: Path = project_root / os.getenv("DATASETS_DIR", "files/Datasets")
-    labels_root_dir: Path = project_root / os.getenv("LABELS_DIR", "files/Labels")
-    concat_wav_dir: Path = project_root / os.getenv(
-        "LIBRISPEECH_CONCAT_DIR", "files/Datasets/LibriSpeechConcat"
-    )
+    project_root: Path = Path(os.environ["PROJECT_ROOT"])
+    datasets_root: Path = project_root / os.environ["DATASETS_DIR"]
+    labels_root_dir: Path = project_root / os.environ["LABELS_DIR"]
+    concat_wav_dir: Path = project_root / os.environ["LIBRISPEECH_CONCAT_DIR"]
 
     # 1. Find a random LibriSpeechConcat file.
     print(f"Searching for .wav files in: {concat_wav_dir}")
