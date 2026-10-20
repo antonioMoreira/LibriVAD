@@ -1,0 +1,58 @@
+[project]
+name = "librivad"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Antonio Moreira", email = "antonionmoreira@gmail.com" }
+]
+requires-python = ">=3.14.7"
+dependencies = [
+    "librosa>=1.0.0",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "pandas>=3.0.6",
+    "praat-textgrids>=1.4.0",
+    "pydub>=0.25.1",
+    "requests>=2.34.2",
+    "rvadfast>=0.10.0",
+    "scipy>=1.18.1",
+    "soundfile>=0.14.0",
+    "torch>=2.14.1",
+    "tqdm>=4.70.1",
+]
+
+[project.scripts]
+librivad = "librivad:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+link-mode = "copy"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.ty.src]
+include = ["src", "*.py", "Scripts"]
+
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17.1",
+    "ty>=0.0.90",
+]
+

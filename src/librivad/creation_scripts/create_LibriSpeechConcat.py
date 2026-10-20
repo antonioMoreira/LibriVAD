@@ -2,18 +2,20 @@
 # audio files from the LibriSpeech dataset.
 
 import glob
-import scipy.io.wavfile as wav
-import numpy as np
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+import numpy as np
+import scipy.io.wavfile as wav
 from tqdm import tqdm
 
+from librivad import librispeech_functions as lf
+
 # Add the parent 'Scripts' directory to the system path to import local modules.
-scripts_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+scripts_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(scripts_path)
-from Scripts import librispeech_functions as lf
 
 
 def generate_silence_signal(list_of_paths, alignments_dir):
@@ -39,7 +41,9 @@ def generate_silence_signal(list_of_paths, alignments_dir):
         }
 
         # Use tqdm for a progress bar that updates as tasks complete.
-        for future in tqdm(as_completed(future_to_path), total=len(list_of_paths), desc="Extracting silence"):
+        for future in tqdm(
+            as_completed(future_to_path), total=len(list_of_paths), desc="Extracting silence"
+        ):
             try:
                 silence_segment = future.result()
                 if silence_segment is not None and len(silence_segment) > 0:
@@ -47,12 +51,12 @@ def generate_silence_signal(list_of_paths, alignments_dir):
             except Exception as exc:
                 path = future_to_path[future]
                 print(f"Error extracting silence from {path}: {exc}")
-    
+
     # Combine all extracted segments into one continuous signal.
     if not all_silence_segments:
         print("Warning: No silence could be extracted. Returning empty signal.")
         return np.array([], dtype=np.int16)
-        
+
     return np.concatenate(all_silence_segments)
 
 
@@ -67,7 +71,7 @@ def process_pair(task_info, full_silence):
         full_silence (np.array): The complete silence signal used for slicing.
     """
     path1_str, path2_str, silence_start = task_info
-    
+
     # Use pathlib for robust, cross-platform path handling.
     path1 = Path(path1_str)
     path2 = Path(path2_str)
@@ -80,7 +84,7 @@ def process_pair(task_info, full_silence):
     inbetween_silence_len = int((len(wav1) + len(wav2)) / 4)
 
     if inbetween_silence_len > n_silence:
-        raise ValueError('Generated silence signal is too short for the required length.')
+        raise ValueError("Generated silence signal is too short for the required length.")
 
     # Slice the silence signal, wrapping around to the beginning if necessary.
     silence_end = silence_start + inbetween_silence_len
@@ -91,18 +95,18 @@ def process_pair(task_info, full_silence):
         inbetween_silence = np.concatenate((first_chunk, second_chunk))
     else:
         inbetween_silence = full_silence[silence_start:silence_end]
-    
+
     # Create the new audio signal by concatenating wav1 -> silence -> wav2.
     sample_concat = np.concatenate((wav1, 0.001 * inbetween_silence, wav2))
     output = lf.scale_signal(sample_concat)
-    
+
     # --- Robustly construct the output filename and path ---
     # The new filename is a combination of the two source filenames.
-    if path1.parts[-3] != path2.parts[-3]: # Different speakers
+    if path1.parts[-3] != path2.parts[-3]:  # Different speakers
         file_name = f"{path1.stem}_+_{path2.name}"
-    elif path1.parts[-2] != path2.parts[-2]: # Different chapters, same speaker
+    elif path1.parts[-2] != path2.parts[-2]:  # Different chapters, same speaker
         file_name = f"{path1.stem}_+_{'-'.join(path2.stem.split('-')[1:])}.wav"
-    else: # Same chapter and speaker
+    else:  # Same chapter and speaker
         file_name = f"{path1.stem}_+_{path2.stem.split('-')[-1]}.wav"
 
     # Create the new path by modifying the path of the second file.
@@ -115,7 +119,7 @@ def process_pair(task_info, full_silence):
         print("Warning: 'LibriSpeech' not found in path. Output path may be incorrect.")
 
     parts2[-1] = file_name
-    final_path = Path(*parts2) # Reassemble the path from its parts.
+    final_path = Path(*parts2)  # Reassemble the path from its parts.
 
     # Create the directory and save the new .wav file.
     final_path.parent.mkdir(parents=True, exist_ok=True)
@@ -127,21 +131,21 @@ def create_LibriSpeechConcat(list_of_paths, silence_path):
     Creates the LibriSpeechConcat dataset for a given list of audio files.
     It pre-calculates all necessary information for each pair before starting
     the parallel processing, ensuring each task is independent.
-    
+
     Args:
       - list_of_paths (list): A list of .wav file paths to be merged.
       - silence_path (Path): Path to the generated silence .wav file.
     """
     sr, full_silence = wav.read(silence_path)
     n_silence = len(full_silence)
-    
+
     # Ensure the list of files is even by removing the last file if necessary.
     if len(list_of_paths) % 2 != 0:
         list_of_paths.pop()
 
     # Group the file paths into pairs.
-    pairs = [(list_of_paths[i], list_of_paths[i+1]) for i in range(0, len(list_of_paths), 2)]
-  
+    pairs = [(list_of_paths[i], list_of_paths[i + 1]) for i in range(0, len(list_of_paths), 2)]
+
     # Pre-calculate the silence start index for each pair sequentially.
     # This makes each task independent and safe for parallel processing.
     tasks = []
@@ -151,18 +155,20 @@ def create_LibriSpeechConcat(list_of_paths, silence_path):
         sr, wav1 = wav.read(path1)
         sr, wav2 = wav.read(path2)
         inbetween_silence_len = int((len(wav1) + len(wav2)) / 4)
-        
+
         # Add the task info (paths and calculated start index) to the list.
         tasks.append((path1, path2, current_silence_start))
-        
+
         # Update the next start index, wrapping around the silence buffer.
         current_silence_start = (current_silence_start + inbetween_silence_len) % n_silence
 
     # Process all the prepared tasks in parallel.
     with ThreadPoolExecutor() as executor:
         future_to_task = {executor.submit(process_pair, task, full_silence): task for task in tasks}
-    
-        for future in tqdm(as_completed(future_to_task), total=len(tasks), desc="Concatenating files"):
+
+        for future in tqdm(
+            as_completed(future_to_task), total=len(tasks), desc="Concatenating files"
+        ):
             try:
                 future.result()
             except Exception as exc:
@@ -185,10 +191,12 @@ if __name__ == "__main__":
 
     print("\nSearching LibriSpeech files...")
     # Find all .wav files in the specified subdirectories.
-    paths_train = sorted(glob.glob(str(wav_dir / 'train-clean-100' / '**' / '*.wav'), recursive=True))
-    paths_val = sorted(glob.glob(str(wav_dir / 'dev-clean' / '**' / '*.wav'), recursive=True))
-    paths_test = sorted(glob.glob(str(wav_dir / 'test-clean' / '**' / '*.wav'), recursive=True))
-    
+    paths_train = sorted(
+        glob.glob(str(wav_dir / "train-clean-100" / "**" / "*.wav"), recursive=True)
+    )
+    paths_val = sorted(glob.glob(str(wav_dir / "dev-clean" / "**" / "*.wav"), recursive=True))
+    paths_test = sorted(glob.glob(str(wav_dir / "test-clean" / "**" / "*.wav"), recursive=True))
+
     # Remove paths that do not have corresponding alignment files.
     paths_train = lf.remove_unaligned_paths(paths_train, unaligned_path)
 
@@ -201,7 +209,7 @@ if __name__ == "__main__":
     create_LibriSpeechConcat(paths_train, silence_path)
 
     print("Preparing LibriSpeechConcat dev-clean...")
-    #create_LibriSpeechConcat(paths_val, silence_path)
+    # create_LibriSpeechConcat(paths_val, silence_path)
 
     print("Preparing LibriSpeechConcat test-clean...")
     create_LibriSpeechConcat(paths_test, silence_path)
