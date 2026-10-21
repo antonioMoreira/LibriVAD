@@ -204,24 +204,34 @@ def main() -> None:
         model_url: str = f"{HF_MODELS_BASE_URL}/{model_rel_path}"
         download_file(model_url, model_dest)
 
-    # Create the target directory if it doesn't exist
-    flac_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"Using base URL: {base_url}")
-    print(f"Downloading files to: {flac_dir}")
-
     # --- 3. Download, Extract, and Clean Up Archives ---
     librispeech_flac_dir: Path = base_dir / os.environ["LIBRISPEECH_FLAC_DIR"]
+    librispeech_wav_dir: Path = base_dir / os.environ["LIBRISPEECH_WAV_DIR"]
+    librispeech_concat_dir: Path = base_dir / os.environ["LIBRISPEECH_CONCAT_DIR"]
+    labels_dir: Path = base_dir / os.environ["LABELS_DIR"]
+
     for filename in FILES_TO_DOWNLOAD:
         split_name: str = filename.removesuffix(".tar.gz")
-        split_dir: Path = librispeech_flac_dir / split_name
+        wav_split_dir: Path = librispeech_wav_dir / split_name
+        flac_split_dir: Path = librispeech_flac_dir / split_name
 
-        if split_dir.exists() and any(split_dir.iterdir()):
+        if wav_split_dir.exists() and any(wav_split_dir.rglob("*.wav")):
             print(
                 f"Skipping download and extraction for {filename}: "
-                f"{split_dir} is already populated."
+                f"{wav_split_dir} is already populated."
             )
             continue
+
+        if flac_split_dir.exists() and any(flac_split_dir.iterdir()):
+            print(
+                f"Skipping download and extraction for {filename}: "
+                f"{flac_split_dir} is already populated."
+            )
+            continue
+
+        flac_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Using base URL: {base_url}")
+        print(f"Downloading files to: {flac_dir}")
 
         file_url: str = f"{base_url}/{filename}"
         archive_path: Path = flac_dir / filename
@@ -242,14 +252,44 @@ def main() -> None:
         os.remove(archive_path)
 
     # --- 4. Run the Python Preprocessing Scripts ---
-    run_command([sys.executable, str(scripts_dir / "create_LibriSpeech_wav.py")])
+    all_wav_splits_ready: bool = all(
+        (librispeech_wav_dir / filename.removesuffix(".tar.gz")).exists()
+        and any((librispeech_wav_dir / filename.removesuffix(".tar.gz")).rglob("*.wav"))
+        for filename in FILES_TO_DOWNLOAD
+    )
+    if all_wav_splits_ready:
+        print(f"Skipping create_LibriSpeech_wav.py: {librispeech_wav_dir} is already populated.")
+    else:
+        run_command([sys.executable, str(scripts_dir / "create_LibriSpeech_wav.py")])
 
     # Clean up the Flac directory which is no longer needed
-    print(f"Removing temporary directory: {flac_dir}")
-    shutil.rmtree(flac_dir, onexc=onerror)
+    if flac_dir.exists():
+        print(f"Removing temporary directory: {flac_dir}")
+        shutil.rmtree(flac_dir, onexc=onerror)
 
-    run_command([sys.executable, str(scripts_dir / "create_LibriSpeechConcat.py")])
-    run_command([sys.executable, str(scripts_dir / "create_labels.py")])
+    silence_wav_path: Path = librispeech_wav_dir / "train100_silence.wav"
+    all_concat_splits_ready: bool = silence_wav_path.is_file() and all(
+        (librispeech_concat_dir / filename.removesuffix(".tar.gz")).exists()
+        and any((librispeech_concat_dir / filename.removesuffix(".tar.gz")).rglob("*.wav"))
+        for filename in FILES_TO_DOWNLOAD
+    )
+    if all_concat_splits_ready:
+        print(
+            f"Skipping create_LibriSpeechConcat.py: {librispeech_concat_dir} is already populated."
+        )
+    else:
+        run_command([sys.executable, str(scripts_dir / "create_LibriSpeechConcat.py")])
+
+    all_labels_ready: bool = all(
+        (labels_dir / dataset_name / filename.removesuffix(".tar.gz")).exists()
+        and any((labels_dir / dataset_name / filename.removesuffix(".tar.gz")).rglob("*.npy"))
+        for dataset_name in ("LibriSpeech", "LibriSpeechConcat")
+        for filename in FILES_TO_DOWNLOAD
+    )
+    if all_labels_ready:
+        print(f"Skipping create_labels.py: {labels_dir} is already populated.")
+    else:
+        run_command([sys.executable, str(scripts_dir / "create_labels.py")])
 
     print("\nSetup completed successfully!")
 

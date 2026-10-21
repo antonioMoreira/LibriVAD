@@ -33,7 +33,7 @@ Configured via `URL_MIRROR_US`, `URL_MIRROR_EU`, `URL_MIRROR_CN`, and `FILES_TO_
   * **`train-clean-100.tar.gz`:** `<base_url>/train-clean-100.tar.gz`
   * **`dev-clean.tar.gz`:** `<base_url>/dev-clean.tar.gz`
   * **`test-clean.tar.gz`:** `<base_url>/test-clean.tar.gz`
-  * **Behavior:** Each archive is downloaded to `files/datasets/flac/`, extracted into `files/datasets/flac/LibriSpeech/<split>/`, and immediately removed (`os.remove`). After [`create_LibriSpeech_wav.py`](../src/librivad/creation_scripts/create_LibriSpeech_wav.py) converts the `.flac` audio to `.wav`, the entire temporary `files/datasets/flac/` directory is removed (`shutil.rmtree`).
+  * **Behavior:** Each archive is skipped if `files/datasets/LibriSpeech/<split>/` already contains `.wav` files (or if `files/datasets/flac/LibriSpeech/<split>/` is already populated). Otherwise, it is downloaded to `files/datasets/flac/`, extracted into `files/datasets/flac/LibriSpeech/<split>/`, and immediately removed (`os.remove`). After [`create_LibriSpeech_wav.py`](../src/librivad/creation_scripts/create_LibriSpeech_wav.py) converts the `.flac` audio to `.wav`, the entire temporary `files/datasets/flac/` directory is removed (`shutil.rmtree`).
 
 ---
 
@@ -81,16 +81,19 @@ Because `setup.py` downloads the pre-compiled `Noises.zip` archive from Hugging 
 
 ## 4. Preprocessing Pipeline Triggered by `setup.py`
 
-After downloading and extracting the archives, `setup.py` runs three scripts sequentially from `src/librivad/creation_scripts/`:
+After downloading and extracting the archives, `setup.py` runs three scripts sequentially from `src/librivad/creation_scripts/` (skipping any script whose target output directories are already populated):
 
 1. **[`create_LibriSpeech_wav.py`](../src/librivad/creation_scripts/create_LibriSpeech_wav.py)**
    * Converts `.flac` files in `files/datasets/flac/LibriSpeech/{train-clean-100,dev-clean,test-clean}` to `.wav` files in `files/datasets/LibriSpeech/{train-clean-100,dev-clean,test-clean}`.
-   * `setup.py` then deletes `files/datasets/flac/`.
+   * Skipped if `files/datasets/LibriSpeech/{train-clean-100,dev-clean,test-clean}` already contain `.wav` files.
+   * `setup.py` then deletes `files/datasets/flac/` if present.
 2. **[`create_LibriSpeechConcat.py`](../src/librivad/creation_scripts/create_LibriSpeechConcat.py)**
    * Extracts silent segments using the forced alignments in `files/Forced_alignments/librispeech_alignments/train-clean-100` and writes `files/datasets/LibriSpeech/train100_silence.wav`.
    * Concatenates pairs of utterances with intermediate silence to build `files/datasets/LibriSpeechConcat/{train-clean-100,dev-clean,test-clean}`.
+   * Skipped if `train100_silence.wav` and `files/datasets/LibriSpeechConcat/{train-clean-100,dev-clean,test-clean}` are already populated.
 3. **[`create_labels.py`](../src/librivad/creation_scripts/create_labels.py)**
    * Reads the `.TextGrid` forced alignments and generates binary frame-level `.npy` VAD labels (16 kHz) for both `LibriSpeech` and `LibriSpeechConcat` across `train-clean-100`, `dev-clean`, and `test-clean` under `files/Labels/`.
+   * Skipped if `files/Labels/{LibriSpeech,LibriSpeechConcat}/{train-clean-100,dev-clean,test-clean}` already contain `.npy` files.
 
 ---
 

@@ -5,6 +5,7 @@
 
 import glob
 import os
+import shutil
 import sys
 from collections.abc import Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
@@ -29,6 +30,50 @@ DEFAULT_DATASETS_DIR: Path = PROJECT_ROOT / os.environ["DATASETS_DIR"]
 LIBRISPEECH_ALIGNMENTS_DIR: Path = PROJECT_ROOT / os.environ["LIBRISPEECH_ALIGNMENTS_DIR"]
 NOISES_DIR: Path = PROJECT_ROOT / os.environ["NOISES_DIR"]
 DEFAULT_RESULTS_DIR: Path = PROJECT_ROOT / os.environ["RESULTS_DIR"]
+
+REQUIRED_DISK_SPACE_BYTES: dict[str, int] = {
+    "small": 15 * 1024**3,  # 15 GB
+    "medium": 150 * 1024**3,  # 150 GB
+    "large": int(1.5 * 1024**4),  # 1.5 TB
+}
+
+REQUIRED_DISK_SPACE_LABELS: dict[str, str] = {
+    "small": "15 GB",
+    "medium": "150 GB",
+    "large": "1.5 TB",
+}
+
+
+def check_disk_space(size: str, save_dir: str | Path | None = None) -> None:
+    """
+    Verifies that sufficient free disk space is available for the requested
+    dataset size ('small': 15 GB, 'medium': 150 GB, 'large': 1.5 TB) before
+    starting dataset generation.
+    """
+    if size not in REQUIRED_DISK_SPACE_BYTES:
+        raise ValueError('Size must be one of "small", "medium", or "large".')
+
+    target_path: Path = DEFAULT_RESULTS_DIR if save_dir is None else Path(save_dir)
+    check_path: Path = target_path.resolve()
+    while not check_path.exists() and check_path.parent != check_path:
+        check_path = check_path.parent
+
+    free_bytes: int = shutil.disk_usage(check_path).free
+    required_bytes: int = REQUIRED_DISK_SPACE_BYTES[size]
+    required_label: str = REQUIRED_DISK_SPACE_LABELS[size]
+    free_gb: float = free_bytes / (1024**3)
+
+    if free_bytes < required_bytes:
+        print(
+            f"Error: Insufficient disk space on '{check_path}' for '{size}' dataset. "
+            f"Required: {required_label}, Available: {free_gb:.2f} GB."
+        )
+        sys.exit(1)
+
+    print(
+        f"Disk space check passed for '{size}' dataset "
+        f"(Required: {required_label}, Available: {free_gb:.2f} GB)."
+    )
 
 
 def load_files(dataset: str, dataset_dir: str | Path, split: str) -> list[str]:
@@ -295,6 +340,8 @@ if __name__ == "__main__":
     Splits: list[str] = ["train", "val", "test"]
 
     args: argparse.Namespace = parser.parse_args()
+
+    check_disk_space(args.size, args.save_dir)
 
     for dataset in Datasets:
         print(f"\n--- Generating data based on the {dataset} dataset ---")
