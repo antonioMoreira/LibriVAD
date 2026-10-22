@@ -32,7 +32,7 @@ This repository contains the scripts necessary to generate the LibriVAD dataset,
 
 2.  **Configure Environment Variables:** Review and adjust the paths and parameters in `.env` if needed.
 
-3.  **Download Source Data:** Run the `setup.py` script with `uv run` and choose the LibriSpeech mirror closest to your location from `[EU, USA, CN]`. This will download the necessary splits of the LibriSpeech dataset.
+3.  **Download Source Data:** Run the `setup.py` script with `uv run` and choose the LibriSpeech mirror closest to your location from `[EU, US, CN]`. This will download the necessary splits of the LibriSpeech dataset.
 
     *EU Example:*
     ```bash
