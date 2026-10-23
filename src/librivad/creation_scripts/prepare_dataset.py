@@ -52,7 +52,7 @@ def convert_audio(raw: bytes, target_sr: int = 16000) -> NDArray[np.int16]:
     Decodes an audio file, mixes it down to mono, resamples it to `target_sr` (only
     if needed) and returns it as 16-bit PCM samples.
     """
-    signal: NDArray[np.float32]
+    signal: NDArray[Any]
     sr: int
     signal, sr = sf.read(io.BytesIO(raw), dtype="float32", always_2d=True)
     mono: NDArray[np.float32] = signal.mean(axis=1)
