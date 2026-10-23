@@ -325,8 +325,7 @@ if __name__ == "__main__":
 
     # To maintain the structure of the dataset these should be fixed;
     # one can experiment with them however
-    Datasets: list[str] = ["LibriSpeech", "LibriSpeechConcat"]
-    Noises: list[str] = [
+    AllNoises: list[str] = [
         "Babble_noise",
         "SSN_noise",
         "Domestic_noise",
@@ -339,9 +338,32 @@ if __name__ == "__main__":
     ]
     Splits: list[str] = ["train", "val", "test"]
 
+    parser.add_argument(
+        "--datasets",
+        nargs="+",
+        default=["LibriSpeech", "LibriSpeechConcat"],
+        help="Datasets (folders of --dataset_dir) to generate.",
+    )
+    parser.add_argument(
+        "--noises",
+        nargs="+",
+        choices=AllNoises,
+        default=AllNoises,
+        help="Noise types to mix in.",
+    )
+    parser.add_argument(
+        "--no-disk-check",
+        action="store_true",
+        help="Skip the free disk space check, whose thresholds are meant for LibriSpeech.",
+    )
+
     args: argparse.Namespace = parser.parse_args()
 
-    check_disk_space(args.size, args.save_dir)
+    Datasets: list[str] = args.datasets
+    Noises: list[str] = args.noises
+
+    if not args.no_disk_check:
+        check_disk_space(args.size, args.save_dir)
 
     for dataset in Datasets:
         print(f"\n--- Generating data based on the {dataset} dataset ---")

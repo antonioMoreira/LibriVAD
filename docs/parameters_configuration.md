@@ -18,7 +18,7 @@ Loaded automatically via `python-dotenv` across all setup and generation scripts
 | `URL_MIRROR_EU` | `https://openslr.elda.org/resources/12` | EU OpenSLR mirror for LibriSpeech `.tar.gz` archives. |
 | `URL_MIRROR_CN` | `https://openslr.magicdatatech.com/resources/12` | CN OpenSLR mirror for LibriSpeech `.tar.gz` archives. |
 | `FILES_TO_DOWNLOAD` | `train-clean-100.tar.gz,dev-clean.tar.gz,test-clean.tar.gz` | Comma-separated LibriSpeech splits to download and process. |
-| `PROJECT_ROOT` | `/mnt/HD1TB/LibriVAD` | Absolute root path of the project workspace. |
+| `PROJECT_ROOT` | `.` | Root path of the project workspace. Relative, so scripts must run from the repository root. |
 | `FILES_DIR` | `files` | Root directory for downloaded assets, source datasets, and labels. |
 | `DATASETS_DIR` | `files/datasets` | Parent directory of clean `LibriSpeech` and `LibriSpeechConcat` WAVs. |
 | `FLAC_DIR` | `files/datasets/flac` | Temporary staging directory for `.tar.gz` archives and `.flac` files. |
