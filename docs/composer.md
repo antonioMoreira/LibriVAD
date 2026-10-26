@@ -17,7 +17,7 @@ uv run src/librivad/creation_scripts/create_composed_dataset.py --dataset Skylar
 
 # Parameters from a file; the command line wins over the file
 uv run src/librivad/creation_scripts/create_composed_dataset.py --dataset Skylar \
-    --config my_config.toml --seed 3
+    --config configs/composer_example.yaml --seed 3
 ```
 
 ## Levels
@@ -39,8 +39,8 @@ normalised, because that would erase the absolute levels.
 
 ## Parameters
 
-All of them have a default and are optional. The same names are the keys of the TOML file
-(`--noise-only-ratio` is `noise_only_ratio`, ...).
+All of them have a default and are optional. The same names are the keys of a config file,
+YAML or TOML (`--noise-only-ratio` is `noise_only_ratio`, ...).
 
 | Flag | Meaning | Default |
 | :--- | :--- | :--- |
@@ -63,7 +63,28 @@ All of them have a default and are optional. The same names are the keys of the 
 A `noise_only` clip always has at least one noise. The noise of a split is only used with the
 speech of the same split, and any folder `<name>/<name>_<split>.wav` in the noises directory counts as a noise.
 
-Example TOML:
+## Config files
+
+`--config` takes a `.yaml`/`.yml` or a `.toml` file; the extension picks the reader. Both have the same
+keys, every key is optional, and the command line wins over the file. A key left empty or set to
+`null` keeps its default.
+
+[`configs/composer_example.yaml`](../configs/composer_example.yaml) lists every parameter with its
+default and a comment, plus commented examples for two fixed noises and for noise-only clips. Copy it
+and edit what you need:
+
+```yaml
+duration: [8, 12]
+noise_only_ratio: 0.2
+noises:
+  - {name: City_noise, db: -38}
+  - {name: Babble_noise, db: -45}
+pause_prob: 0.7
+num_clips: [500, 50, 50]
+seed: 5
+```
+
+The same in TOML:
 
 ```toml
 duration = [8, 12]

@@ -1,0 +1,44 @@
+# Example configuration for create_composed_dataset.py.
+#
+#   uv run src/librivad/creation_scripts/create_composed_dataset.py \
+#       --dataset Skylar --config configs/composer_example.yaml
+#
+# Every key is optional and the values below are the defaults. Priority, from lowest to
+# highest: defaults, this file, the command line (e.g. --seed 3 overrides `seed` here).
+#
+# Levels are dBFS: the RMS in dB relative to full scale. The speech level is measured on the
+# speech samples of the clip and the level of a noise on the whole clip, so the SNR of a noise
+# is speech_db - noise_db. Ranges are [min, max] and are drawn for each clip; a single
+# value repeated, like [-25, -25], is a fixed one.
+
+# What a clip is made of
+mode: speech            # speech (speech + noise) or noise_only (no speech at all)
+noise_only_ratio: 0.0   # fraction of the clips with no speech, in speech mode (0 to 1)
+duration: [10, 30]      # length of a clip in seconds, up to 30
+speech_db: [-25, -25]   # speech level (dBFS)
+
+# Noises, drawn for each clip from the ones available in the noises directory
+noise_count: [1, 1]     # how many noises a clip has: 0 to 2 (noise_only clips have at least 1)
+noise_db: [-45, -30]    # level range of each drawn noise (dBFS)
+# noise_pool: [Street_noise, Babble_noise]   # only draw from these; default is all of them
+
+# Pauses in the speech, during which only the noise is heard
+pause_prob: 0.5         # chance of a pause before each segment (the start and between segments)
+pause_range: [0.5, 3.0] # length of a pause in seconds
+
+# Output
+num_clips: [1000, 100, 100]  # clips to create for the train, val and test splits
+seed: 0                      # the same seed gives the same clips
+normalize: limit             # limit: only attenuates a clip that would clip; none: hard clips
+
+# --- Alternatives ---------------------------------------------------------------------------
+# Uncomment to use. Keep the same indentation.
+
+# Two fixed noises, each with its own level. They replace the drawn ones above (at most 2):
+# noises:
+#   - {name: Street_noise, db: -35}
+#   - {name: Babble_noise, db: -42}
+
+# Clips with only noise, from 1 or 2 layers:
+# mode: noise_only
+# noise_count: [1, 2]

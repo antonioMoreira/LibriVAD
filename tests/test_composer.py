@@ -1,7 +1,9 @@
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
+import yaml
 from numpy.typing import NDArray
 
 from librivad.composer import (
@@ -16,6 +18,11 @@ from librivad.composer import (
     fit_label,
     rms,
     take_wrapped,
+)
+from librivad.creation_scripts.create_composed_dataset import (
+    build_parser,
+    load_config_file,
+    resolve_config,
 )
 
 SECOND: int = SAMPLE_RATE
@@ -89,6 +96,93 @@ def test_from_dict_converts_and_rejects_unknown_keys() -> None:
 
     with pytest.raises(ValueError):
         ComposeConfig.from_dict({"not_a_parameter": 1})
+
+
+EXAMPLE_CONFIG: Path = Path(__file__).parent.parent / "configs" / "composer_example.yaml"
+
+
+def test_example_yaml_is_valid_and_matches_the_defaults() -> None:
+    config: ComposeConfig = ComposeConfig.from_dict(load_config_file(EXAMPLE_CONFIG))
+
+    assert config == ComposeConfig()
+
+
+def test_example_yaml_alternatives_are_valid_when_uncommented() -> None:
+    lines: list[str] = EXAMPLE_CONFIG.read_text().splitlines()
+    start: int = next(i for i, line in enumerate(lines) if line.startswith("# --- Alternatives"))
+
+    uncommented: list[str] = []
+    for line in lines[start + 1 :]:
+        # Only the lines of the alternatives: the examples, not the explanations.
+        if line.startswith(("# noises:", "#   - {", "# mode:", "# noise_count:")):
+            uncommented.append(line[2:])
+    text: str = "\n".join(uncommented)
+    assert "noises:" in text and "mode:" in text
+
+    # The two alternatives are independent, so they are tried one at a time.
+    fixed: str = "\n".join(line for line in uncommented if not line.startswith(("mode", "noise_c")))
+    only_noise: str = "\n".join(
+        line for line in uncommented if line.startswith(("mode", "noise_c"))
+    )
+
+    two_noises: ComposeConfig = ComposeConfig.from_dict(yaml.safe_load(fixed))
+    assert [n.name for n in two_noises.noises] == ["Street_noise", "Babble_noise"]
+    noise_only: ComposeConfig = ComposeConfig.from_dict(yaml.safe_load(only_noise))
+    assert noise_only.mode == "noise_only"
+    assert noise_only.noise_count == (1, 2)
+
+
+def test_toml_and_yaml_files_give_the_same_config(tmp_path: Path) -> None:
+    toml_file: Path = tmp_path / "config.toml"
+    toml_file.write_text(
+        'duration = [4, 6]\nseed = 5\nnoises = [{ name = "City_noise", db = -38 }]\n'
+    )
+    yaml_file: Path = tmp_path / "config.yaml"
+    yaml_file.write_text("duration: [4, 6]\nseed: 5\nnoises:\n  - {name: City_noise, db: -38}\n")
+    yml_file: Path = tmp_path / "config.yml"
+    yml_file.write_text(yaml_file.read_text())
+
+    from_toml: ComposeConfig = ComposeConfig.from_dict(load_config_file(toml_file))
+
+    assert from_toml == ComposeConfig.from_dict(load_config_file(yaml_file))
+    assert from_toml == ComposeConfig.from_dict(load_config_file(yml_file))
+    assert from_toml.noises == (NoiseLayer("City_noise", -38.0),)
+
+
+def test_yaml_empty_and_null_entries_keep_the_defaults(tmp_path: Path) -> None:
+    empty: Path = tmp_path / "empty.yaml"
+    empty.write_text("# everything commented out\n")
+    nulls: Path = tmp_path / "nulls.yaml"
+    nulls.write_text("noise_pool: null\nnoises:\nseed: 4\n")
+
+    assert ComposeConfig.from_dict(load_config_file(empty)) == ComposeConfig()
+    assert ComposeConfig.from_dict(load_config_file(nulls)) == ComposeConfig(seed=4)
+
+
+def test_config_file_must_be_a_known_format_and_a_mapping(tmp_path: Path) -> None:
+    other: Path = tmp_path / "config.json"
+    other.write_text("{}")
+    listing: Path = tmp_path / "list.yaml"
+    listing.write_text("- 1\n- 2\n")
+
+    with pytest.raises(ValueError, match="toml, .yaml or .yml"):
+        load_config_file(other)
+    with pytest.raises(ValueError, match="key: value"):
+        load_config_file(listing)
+
+
+def test_command_line_wins_over_the_yaml_file(tmp_path: Path) -> None:
+    config_file: Path = tmp_path / "config.yaml"
+    config_file.write_text("seed: 5\nduration: [4, 6]\npause_prob: 0.2\n")
+
+    args = build_parser().parse_args(
+        ["--dataset", "Skylar", "--config", str(config_file), "--seed", "9"]
+    )
+    config: ComposeConfig = resolve_config(args)
+
+    assert config.seed == 9
+    assert config.duration == (4, 6)
+    assert config.pause_prob == 0.2
 
 
 def test_take_wrapped_loops_around_the_end() -> None:

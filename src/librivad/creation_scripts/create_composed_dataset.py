@@ -5,7 +5,8 @@
 # given by the user, so the labels are created together with the audio.
 #
 # Every parameter has a default (see ComposeConfig) and can be set, from lowest to highest
-# priority, by a TOML file (--config) and by the command line.
+# priority, by a TOML or YAML file (--config, see configs/composer_example.yaml) and by the
+# command line.
 #
 # Usage:
 #   uv run src/librivad/creation_scripts/create_composed_dataset.py --dataset Skylar \
@@ -27,6 +28,7 @@ from typing import Any
 
 import numpy as np
 import scipy.io.wavfile as wav
+import yaml
 from dotenv import load_dotenv
 from numpy.typing import NDArray
 from tqdm import tqdm
@@ -88,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="Parameters left out use the defaults of ComposeConfig (see docs/composer.md).",
     )
     parser.add_argument("--dataset", required=True, help="Dataset folder name, e.g. Skylar.")
-    parser.add_argument("--config", type=Path, help="TOML file with parameters.")
+    parser.add_argument("--config", type=Path, help="TOML or YAML file with parameters.")
     parser.add_argument("--dataset_dir", type=str, default=None, help="Root of the datasets.")
     parser.add_argument("--labels_dir", type=str, default=None, help="Root of the labels.")
     parser.add_argument("--noises_dir", type=str, default=None, help="Root of the noises.")
@@ -117,12 +119,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def load_config_file(path: Path) -> dict[str, Any]:
+    """Reads the parameters of a .toml, .yaml or .yml file, according to its extension."""
+    suffix: str = path.suffix.lower()
+    if suffix == ".toml":
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+
+    if suffix in (".yaml", ".yml"):
+        with open(path) as f:
+            values: Any = yaml.safe_load(f)
+        if values is None:  # an empty file, or one with every line commented out
+            return {}
+        if not isinstance(values, dict):
+            raise ValueError(f"{path}: expected 'key: value' pairs at the top level.")
+        return values
+
+    raise ValueError(f"{path}: the config file must be .toml, .yaml or .yml.")
+
+
 def resolve_config(args: argparse.Namespace) -> ComposeConfig:
-    """Defaults, then the TOML file, then the command line."""
+    """Defaults, then the config file, then the command line."""
     values: dict[str, Any] = {}
     if args.config is not None:
-        with open(args.config, "rb") as f:
-            values = tomllib.load(f)
+        values = load_config_file(args.config)
     config: ComposeConfig = ComposeConfig.from_dict(values)
 
     changes: dict[str, Any] = {

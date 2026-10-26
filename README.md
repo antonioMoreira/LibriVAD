@@ -75,7 +75,7 @@ uv run src/librivad/creation_scripts/create_LibriVAD.py medium --datasets Skylar
 
 ## Composed Clips (Speech, Pauses and Noise Layers)
 
-`create_composed_dataset.py` creates clips of up to 30 seconds made of speech segments, pauses and up to two noise layers, each one with its own level in dBFS, plus clips with noise only. Every parameter has a default and can be set by the command line or by a TOML file. It works with any dataset prepared with labels:
+`create_composed_dataset.py` creates clips of up to 30 seconds made of speech segments, pauses and up to two noise layers, each one with its own level in dBFS, plus clips with noise only. Every parameter has a default and can be set by the command line or by a YAML (or TOML) file, such as [`configs/composer_example.yaml`](configs/composer_example.yaml). It works with any dataset prepared with labels:
 
 ```bash
 uv run src/librivad/creation_scripts/create_composed_dataset.py --dataset Skylar \

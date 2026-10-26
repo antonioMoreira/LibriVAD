@@ -111,6 +111,8 @@ class ComposeConfig:
 
         converted: dict[str, Any] = {}
         for key, value in values.items():
+            if value is None:  # an empty or null entry (YAML) keeps the default
+                continue
             if key == "noises":
                 converted[key] = tuple(NoiseLayer(str(n["name"]), float(n["db"])) for n in value)
             elif key == "noise_pool" or isinstance(value, list):
