@@ -16,6 +16,7 @@ dependencies = [
     "praat-textgrids>=1.4.0",
     "pydub>=0.25.1",
     "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.3",
     "requests>=2.34.2",
     "rvadfast>=0.10.0",
     "scipy>=1.18.1",
