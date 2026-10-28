@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.14.7"
 dependencies = [
+    "av>=19.0.2",
     "einops>=0.8.2",
     "librosa>=1.0.0",
     "matplotlib>=3.11.2",
