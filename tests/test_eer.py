@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from librivad.eer import compute_mindcf, main
+from librivad.vad.eer import compute_mindcf, main
 
 
 def test_compute_mindcf() -> None:

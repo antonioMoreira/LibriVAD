@@ -1,6 +1,6 @@
 # Difference Between `Results/LibriSpeech` and `Results/LibriSpeechConcat`
 
-When [`create_LibriVAD.py`](../src/librivad/creation_scripts/create_LibriVAD.py) runs, it generates two noisy dataset variants inside `Results/`, corresponding to **LibriVAD-NonConcat** and **LibriVAD-Concat** in the [LibriVAD paper](LibriVAD_2512.17281v1.pdf) (§2.1 & §2.3).
+When [`create_LibriVAD.py`](../src/librivad/generation/creation_scripts/create_LibriVAD.py) runs, it generates two noisy dataset variants inside `Results/`, corresponding to **LibriVAD-NonConcat** and **LibriVAD-Concat** in the [LibriVAD paper](LibriVAD_2512.17281v1.pdf) (§2.1 & §2.3).
 
 ---
 
@@ -26,7 +26,7 @@ Results/LibriSpeechConcat (LibriVAD-Concat):
    - **Silence profile:** Contains only the natural pauses from the original audiobook recordings (~**17.6%** silence overall), mostly located briefly at the beginning and end of each clip.
 
 2. **`Results/LibriSpeechConcat/` (`LibriVAD-Concat` in the paper)**
-   - **What it is:** Created by [`create_LibriSpeechConcat.py`](../src/librivad/creation_scripts/create_LibriSpeechConcat.py), which takes **two consecutive LibriSpeech utterances** and inserts a segment of real extracted silence between them before [`create_LibriVAD.py`](../src/librivad/creation_scripts/create_LibriVAD.py) mixes in the noise.
+   - **What it is:** Created by [`create_LibriSpeechConcat.py`](../src/librivad/generation/creation_scripts/create_LibriSpeechConcat.py), which takes **two consecutive LibriSpeech utterances** and inserts a segment of real extracted silence between them before [`create_LibriVAD.py`](../src/librivad/generation/creation_scripts/create_LibriVAD.py) mixes in the noise.
    - **Silence profile:** The inserted middle silence is calibrated to **25% of the combined length of the two utterances** (`(len(wav1) + len(wav2)) / 4`), raising the Silence-to-Speech Ratio (SSR) to **~34%**.
 
 ---

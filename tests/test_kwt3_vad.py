@@ -4,7 +4,7 @@ import torch
 import torch.optim as optim
 from torch import nn
 
-from librivad.KWT3_vad import (
+from librivad.vad.kwt3_vad import (
     KWT,
     Attention,
     CustomDataset_train,

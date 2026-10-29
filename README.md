@@ -48,7 +48,7 @@ This repository contains the scripts necessary to generate the LibriVAD dataset,
 
     *Small Dataset Example:*
     ```bash
-    uv run src/librivad/creation_scripts/create_LibriVAD.py small
+    uv run src/librivad/generation/creation_scripts/create_LibriVAD.py small
     ```
     The generation process can take a few minutes to several hours, depending on the chosen size and your machine's performance.
 

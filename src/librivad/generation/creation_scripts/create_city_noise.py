@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from numpy.typing import NDArray
 from pydub import AudioSegment
 
-from librivad import librispeech_functions as lf
+from librivad.generation import librispeech_functions as lf
 
 load_dotenv()
 

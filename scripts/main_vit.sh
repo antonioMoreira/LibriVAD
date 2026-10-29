@@ -85,7 +85,7 @@ elif [ $phase == "test-clean" ]; then
         find test-clean -type f |xargs cat - >> wav.lst
 fi	
 
-python mfcc.py wav.lst
+python -m librivad.vad.mfcc wav.lst
 
 
 
@@ -108,12 +108,12 @@ for size in small  medium large ;do
   echo "Test" > phase.txt
   echo "tr_${trndatabase}_to_${database}" >EvalFile.txt
   cat EvalFile.txt
-  python KWT3_vad.py
+  python -m librivad.vad.kwt3_vad
 
   #for eer and mindcf
   echo "Test_ind" > phase.txt
   echo "tr_${trndatabase}_to_${database}" >EvalFile.txt
-  python KWT3_vad.py
+  python -m librivad.vad.kwt3_vad
 
   #test score 
   file=${ExpDir}/tr_${trndatabase}_to_${database}.testdata.auc.csv
@@ -146,7 +146,7 @@ for size in small  medium large ;do
   score=${ExpDir}/tr_${trndatabase}_to_${database}.testdata.score 
   label=${ExpDir}/tr_${trndatabase}_to_${database}.testdata.label 
   echo "EER .."
-  python   eer.py  $score $label
+  python -m librivad.vad.eer  $score $label
 
 done 
 

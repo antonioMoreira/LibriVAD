@@ -33,7 +33,7 @@ Configured via `URL_MIRROR_US`, `URL_MIRROR_EU`, `URL_MIRROR_CN`, and `FILES_TO_
   * **`train-clean-100.tar.gz`:** `<base_url>/train-clean-100.tar.gz`
   * **`dev-clean.tar.gz`:** `<base_url>/dev-clean.tar.gz`
   * **`test-clean.tar.gz`:** `<base_url>/test-clean.tar.gz`
-  * **Behavior:** Each archive is skipped if `files/datasets/LibriSpeech/<split>/` already contains `.wav` files (or if `files/datasets/flac/LibriSpeech/<split>/` is already populated). Otherwise, it is downloaded to `files/datasets/flac/`, extracted into `files/datasets/flac/LibriSpeech/<split>/`, and immediately removed (`os.remove`). After [`create_LibriSpeech_wav.py`](../src/librivad/creation_scripts/create_LibriSpeech_wav.py) converts the `.flac` audio to `.wav`, the entire temporary `files/datasets/flac/` directory is removed (`shutil.rmtree`).
+  * **Behavior:** Each archive is skipped if `files/datasets/LibriSpeech/<split>/` already contains `.wav` files (or if `files/datasets/flac/LibriSpeech/<split>/` is already populated). Otherwise, it is downloaded to `files/datasets/flac/`, extracted into `files/datasets/flac/LibriSpeech/<split>/`, and immediately removed (`os.remove`). After [`create_LibriSpeech_wav.py`](../src/librivad/generation/creation_scripts/create_LibriSpeech_wav.py) converts the `.flac` audio to `.wav`, the entire temporary `files/datasets/flac/` directory is removed (`shutil.rmtree`).
 
 ---
 
@@ -61,15 +61,15 @@ Configured via `HF_MODELS_BASE_URL` and `MODELS_TO_DOWNLOAD` in [`.env`](../.env
 
 ## 3. External Datasets Referenced by Optional Scripts
 
-Because `setup.py` downloads the pre-compiled `Noises.zip` archive from Hugging Face, you **do not** need to download the raw noise corpora for standard LibriVAD generation. However, if you want to regenerate the noise files from scratch using the standalone scripts in `src/librivad/creation_scripts/` or evaluate on VOiCES, the following external datasets are required:
+Because `setup.py` downloads the pre-compiled `Noises.zip` archive from Hugging Face, you **do not** need to download the raw noise corpora for standard LibriVAD generation. However, if you want to regenerate the noise files from scratch using the standalone scripts in `src/librivad/generation/creation_scripts/` or evaluate on VOiCES, the following external datasets are required:
 
-* **DEMAND (Diverse Environments Multichannel Acoustic Noise Database)** — used by [`create_DEMAND_noises.py`](../src/librivad/creation_scripts/create_DEMAND_noises.py)
+* **DEMAND (Diverse Environments Multichannel Acoustic Noise Database)** — used by [`create_DEMAND_noises.py`](../src/librivad/generation/creation_scripts/create_DEMAND_noises.py)
   * **Expected Path:** `files/datasets/DEMAND/` (`DEMAND_DIR`)
   * **URL:** `https://zenodo.org/records/1227121` (16 kHz zip archives for Domestic, Nature, Office, Public, Street, and Transport categories; `SCAFE` 48 kHz is downsampled by the script)
-* **WHAM! Noise Dataset** — used by [`create_city_noise.py`](../src/librivad/creation_scripts/create_city_noise.py)
-  * **Expected Path:** Passed as CLI argument (`uv run src/librivad/creation_scripts/create_city_noise.py /path/to/wham_noise`)
+* **WHAM! Noise Dataset** — used by [`create_city_noise.py`](../src/librivad/generation/creation_scripts/create_city_noise.py)
+  * **Expected Path:** Passed as CLI argument (`uv run src/librivad/generation/creation_scripts/create_city_noise.py /path/to/wham_noise`)
   * **URL:** `https://wham.whisper.ai/` (`https://my-bucket-a8b4b49c25c811ee9a7e8bba05fa24c7.s3.amazonaws.com/wham_noise.zip`)
-* **Libri-Light (`small` & `medium` splits)** — used by [`create_SSN.py`](../src/librivad/creation_scripts/create_SSN.py) and [`create_babble_noise.py`](../src/librivad/creation_scripts/create_babble_noise.py)
+* **Libri-Light (`small` & `medium` splits)** — used by [`create_SSN.py`](../src/librivad/generation/creation_scripts/create_SSN.py) and [`create_babble_noise.py`](../src/librivad/generation/creation_scripts/create_babble_noise.py)
   * **URL (GitHub):** `https://github.com/facebookresearch/libri-light`
   * **Direct Downloads:**
     * `small.tar` (for `create_SSN.py`): `https://dl.fbaipublicfiles.com/librilight/data/small.tar`
@@ -81,17 +81,17 @@ Because `setup.py` downloads the pre-compiled `Noises.zip` archive from Hugging 
 
 ## 4. Preprocessing Pipeline Triggered by `setup.py`
 
-After downloading and extracting the archives, `setup.py` runs three scripts sequentially from `src/librivad/creation_scripts/` (skipping any script whose target output directories are already populated):
+After downloading and extracting the archives, `setup.py` runs three scripts sequentially from `src/librivad/generation/creation_scripts/` (skipping any script whose target output directories are already populated):
 
-1. **[`create_LibriSpeech_wav.py`](../src/librivad/creation_scripts/create_LibriSpeech_wav.py)**
+1. **[`create_LibriSpeech_wav.py`](../src/librivad/generation/creation_scripts/create_LibriSpeech_wav.py)**
    * Converts `.flac` files in `files/datasets/flac/LibriSpeech/{train-clean-100,dev-clean,test-clean}` to `.wav` files in `files/datasets/LibriSpeech/{train-clean-100,dev-clean,test-clean}`.
    * Skipped if `files/datasets/LibriSpeech/{train-clean-100,dev-clean,test-clean}` already contain `.wav` files.
    * `setup.py` then deletes `files/datasets/flac/` if present.
-2. **[`create_LibriSpeechConcat.py`](../src/librivad/creation_scripts/create_LibriSpeechConcat.py)**
+2. **[`create_LibriSpeechConcat.py`](../src/librivad/generation/creation_scripts/create_LibriSpeechConcat.py)**
    * Extracts silent segments using the forced alignments in `files/Forced_alignments/librispeech_alignments/train-clean-100` and writes `files/datasets/LibriSpeech/train100_silence.wav`.
    * Concatenates pairs of utterances with intermediate silence to build `files/datasets/LibriSpeechConcat/{train-clean-100,dev-clean,test-clean}`.
    * Skipped if `train100_silence.wav` and `files/datasets/LibriSpeechConcat/{train-clean-100,dev-clean,test-clean}` are already populated.
-3. **[`create_labels.py`](../src/librivad/creation_scripts/create_labels.py)**
+3. **[`create_labels.py`](../src/librivad/generation/creation_scripts/create_labels.py)**
    * Reads the `.TextGrid` forced alignments and generates binary frame-level `.npy` VAD labels (16 kHz) for both `LibriSpeech` and `LibriSpeechConcat` across `train-clean-100`, `dev-clean`, and `test-clean` under `files/Labels/`.
    * Skipped if `files/Labels/{LibriSpeech,LibriSpeechConcat}/{train-clean-100,dev-clean,test-clean}` already contain `.npy` files.
 
@@ -235,4 +235,4 @@ files/
 ```
 
 > [!NOTE]
-> Running [`create_LibriVAD.py`](../src/librivad/creation_scripts/create_LibriVAD.py) afterwards (`uv run src/librivad/creation_scripts/create_LibriVAD.py <small|medium|large>`) populates `Results/LibriVAD/` (`RESULTS_DIR`) with noise-mixed `.wav` files structured by `<dataset>/<split>/<noise_type>/<SNR>/<speaker_id>/<chapter_id>/`.
+> Running [`create_LibriVAD.py`](../src/librivad/generation/creation_scripts/create_LibriVAD.py) afterwards (`uv run src/librivad/generation/creation_scripts/create_LibriVAD.py <small|medium|large>`) populates `Results/LibriVAD/` (`RESULTS_DIR`) with noise-mixed `.wav` files structured by `<dataset>/<split>/<noise_type>/<SNR>/<speaker_id>/<chapter_id>/`.

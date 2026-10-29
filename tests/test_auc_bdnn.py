@@ -7,7 +7,7 @@ import torch
 from numpy.typing import NDArray
 from torch import nn
 
-from librivad.auc_bdnn import LRcontext, auc_acc, auc_acc_bcres, enframe, uW_context
+from librivad.vad.auc_bdnn import LRcontext, auc_acc, auc_acc_bcres, enframe, uW_context
 
 
 class DummyBDNNModel(nn.Module):

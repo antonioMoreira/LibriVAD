@@ -5,7 +5,7 @@ import pytest
 import scipy.io.wavfile as wav
 from numpy.typing import NDArray
 
-from librivad.mfcc import cmvn, deltas, mfcc, speech_wave, trimf
+from librivad.vad.mfcc import cmvn, deltas, mfcc, speech_wave, trimf
 
 
 def test_trimf() -> None:

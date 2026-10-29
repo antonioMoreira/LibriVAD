@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from numpy.typing import NDArray
 from rVADfast import rVADfast
 
-from librivad import librispeech_functions as lf
+from librivad.generation import librispeech_functions as lf
 
 load_dotenv()
 

@@ -11,7 +11,7 @@ import torch
 from numpy.typing import NDArray
 from scipy.fftpack import dct
 
-from librivad.auc_bdnn import enframe
+from librivad.vad.auc_bdnn import enframe
 
 
 def mfcc(

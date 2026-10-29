@@ -6,7 +6,7 @@ import torch
 from numpy.typing import NDArray
 from torch import nn
 
-from librivad.auc_Vit import (
+from librivad.vad.auc_vit import (
     LRcontext,
     auc_acc,
     auc_acc_bcres,

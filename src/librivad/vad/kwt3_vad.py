@@ -19,7 +19,7 @@ from torch import einsum, nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, Dataset
 
-from librivad.auc_Vit import auc_acc, split_data_into_sequences
+from librivad.vad.auc_vit import auc_acc, split_data_into_sequences
 
 np.random.seed(0)
 torch.manual_seed(42)

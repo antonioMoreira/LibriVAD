@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 from numpy.typing import NDArray
 from tqdm import tqdm
 
-from librivad import librispeech_functions as lf
+from librivad.generation import librispeech_functions as lf
 
 load_dotenv()
 
