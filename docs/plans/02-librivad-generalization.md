@@ -7,6 +7,7 @@
 | Outcome | A config-driven builder in `librivad.generation`. It reads either a LibriSpeech-style corpus or an AudioFolder corpus described by `metadata.jsonl` (the skylar `clean` subset). It renders scenario outputs into any folder layout, with a `metadata.jsonl` per folder, and still reproduces the paper's `LibriSpeechConcat` as the `middle` scenario. |
 | Not in this plan | Running the build for SkylarDataset, validating it, and publishing it (Plan 3). Producing clean audio, splits and word timestamps (Plan 1). |
 | Status | Phase 0 done. Nothing else is implemented. |
+| Open decisions | [00-open-decisions.md](00-open-decisions.md) (LibriVAD only), and `/mnt/HD1TB/skylar-dataset/docs/plans/00-open-decisions.md` (dataset design) |
 
 The scenario config format starts from
 [`concat_scenarios.example.yaml`](../concat_scenarios.example.yaml). Phase 9
@@ -53,9 +54,16 @@ Already decided, not reopened here:
 - A fixed 30 s total for skylar.
 - Levels from 0 to 35 dB below the source, in 5 dB steps.
 - Noise never louder than the source.
-- Folder order `{split}/{scenario}/{noise}/snr_XX/{lang}/{bucket}`.
-- A `metadata.jsonl` in each language folder.
-- `noisy` inherits its splits from `clean`.
+
+Proposed and used as defaults, but **not confirmed yet** (see
+`/mnt/HD1TB/skylar-dataset/docs/plans/00-open-decisions.md`):
+- L1: folder order `{split}/{scenario}/{noise}/snr_XX/{lang}/{bucket}`.
+- L2: a `metadata.jsonl` in each language folder.
+- L5: `noisy` inherits its splits from `clean`.
+- L6–L10: the rendering rules in §6.
+
+The remaining open items for this plan are in
+[00-open-decisions.md](00-open-decisions.md).
 
 ---
 
