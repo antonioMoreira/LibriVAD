@@ -10,15 +10,20 @@ requires-python = ">=3.14.7"
 dependencies = [
     "av>=19.0.2",
     "einops>=0.8.2",
+    "joblib>=1.6.0",
     "librosa>=1.0.0",
     "matplotlib>=3.11.2",
     "numpy>=2.5.4",
     "pandas>=3.0.6",
     "praat-textgrids>=1.4.0",
+    "pyarrow>=26.0.0",
+    "pydantic>=2.14.2",
     "pydub>=0.25.1",
     "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.3",
     "requests>=2.34.2",
     "rvadfast>=0.10.0",
+    "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
     "soundfile>=0.14.0",
     "torch>=2.14.1",
@@ -52,6 +57,11 @@ python-version = "3.14"
 [tool.ty.src]
 include = ["src", "*.py"]
 
+
+[tool.pytest.ini_options]
+pythonpath = ["tests"]
+markers = ["slow: renders real data; run with `uv run pytest -m slow`"]
+addopts = "-m 'not slow'"
 
 [dependency-groups]
 dev = [

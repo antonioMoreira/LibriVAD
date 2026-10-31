@@ -26,7 +26,8 @@ Results/LibriSpeechConcat (LibriVAD-Concat):
    - **Silence profile:** Contains only the natural pauses from the original audiobook recordings (~**17.6%** silence overall), mostly located briefly at the beginning and end of each clip.
 
 2. **`Results/LibriSpeechConcat/` (`LibriVAD-Concat` in the paper)**
-   - **What it is:** Created by [`create_LibriSpeechConcat.py`](../src/librivad/generation/creation_scripts/create_LibriSpeechConcat.py), which takes **two consecutive LibriSpeech utterances** and inserts a segment of real extracted silence between them before [`create_LibriVAD.py`](../src/librivad/generation/creation_scripts/create_LibriVAD.py) mixes in the noise.
+   - **What it is:** Created by [`create_LibriSpeechConcat.py`](../src/librivad/generation/creation_scripts/create_LibriSpeechConcat.py), which takes **two consecutive LibriSpeech utterances** (in sorted order, so 91 of the 2,661 dev/test pairs cross a chapter or speaker boundary) and inserts a segment of real extracted silence between them before [`create_LibriVAD.py`](../src/librivad/generation/creation_scripts/create_LibriVAD.py) mixes in the noise.
+   - **How it is built now:** the script runs the `middle` scenario of [`configs/scenarios/librispeech_middle.yaml`](../configs/scenarios/librispeech_middle.yaml) through the [scenario builder](scenario_builder.md). The dev-clean and test-clean output is bit-identical to the original files (`tests/test_generation_parity.py`). The same builder also makes the configurable variants (noise before or after the speech, any ratio or level), see [`concat_scenarios.example.yaml`](concat_scenarios.example.yaml).
    - **Silence profile:** The inserted middle silence is calibrated to **25% of the combined length of the two utterances** (`(len(wav1) + len(wav2)) / 4`), raising the Silence-to-Speech Ratio (SSR) to **~34%**.
 
 ---

@@ -4,9 +4,9 @@
 |---|---|
 | Sequence | Plan 1 `/mnt/HD1TB/skylar-dataset/docs/plans/01-restructure-skylar-dataset.md` → **Plan 2 (this file)** → Plan 3 `/mnt/HD1TB/skylar-dataset/docs/plans/03-noisy-subset-with-librivad.md` |
 | Replaces | `docs/generalization_plan.md` (v1, moved here with `git mv` and rewritten) |
-| Outcome | A config-driven builder in `librivad.generation`. It reads either a LibriSpeech-style corpus or an AudioFolder corpus described by `metadata.jsonl` (the skylar `clean` subset). It renders scenario outputs into any folder layout, with a `metadata.jsonl` per folder, and still reproduces the paper's `LibriSpeechConcat` as the `middle` scenario. |
+| Outcome | A config-driven builder in `librivad.generation`. It reads either a LibriSpeech-style corpus or an AudioFolder corpus described by `metadata.parquet` (the skylar `clean` subset). It renders scenario outputs into any folder layout, with a `metadata.parquet` per folder, and still reproduces the paper's `LibriSpeechConcat` as the `middle` scenario. |
 | Not in this plan | Running the build for SkylarDataset, validating it, and publishing it (Plan 3). Producing clean audio, splits and word timestamps (Plan 1). |
-| Status | Phase 0 done. Nothing else is implemented. |
+| Status | Phases 0–7 and 9 implemented (1–7 and 9 not yet reviewed); Phase 8 skipped (G13); Phase 10 partly done (G14). Usage: [`docs/scenario_builder.md`](../scenario_builder.md). |
 | Open decisions | [00-open-decisions.md](00-open-decisions.md) (LibriVAD only), and `/mnt/HD1TB/skylar-dataset/docs/plans/00-open-decisions.md` (dataset design) |
 
 The scenario config format starts from
@@ -21,16 +21,17 @@ v1 was written before SkylarDataset was designed. These changes come from the co
 
 | Topic | v1 | v2 | Origin |
 |---|---|---|---|
-| Target corpora | LibriSpeech, plus a generic CSV manifest | Also an AudioFolder corpus described by `metadata.jsonl` (`audiofolder_jsonl`), which is the Plan 1 contract | Your decision: build skylar first, then generalize using it as the example |
+| Target corpora | LibriSpeech, plus a generic CSV manifest | Also an AudioFolder corpus described by `metadata.parquet` (`audiofolder`), which is the Plan 1 contract | Your decision: build skylar first, then generalize using it as the example |
 | Noise length | `noise_ratio` sweep, `noise_len = floor(S·p/(1−p))` | Also **fill to a fixed total**: `noise_len = T·sr − S`, with T = 30 s. The ratio then follows from the source length. | Your noisy design: "r_00 … has 30 s" |
 | Loudness grid | `noise_level_db: [-30, -20, -10, 0]` | `snr_db: [0, 5, …, 35]`, the noise level below the speech level. **Noise never louder than the source** is a validation rule. | Your rule: "The noise loudness must be equal or less to the original" |
 | Labels | TextGrid, `.npy` or none | Also `words`: word timestamps read from the metadata row | Plan 1 stores `words` in each row |
-| Output layout | `ratio_<r>/level_<l>dB/`, `{scenario}_{index}.wav`, one `manifest.csv` | Path templates, e.g. `{split}/{scenario}/{noise}/snr_{snr_db:02d}/{language}/{duration_bucket}/{id}.wav`, with one AudioFolder `metadata.jsonl` per configurable folder level | Layout agreed for `noisy`, and load-tested with `datasets` 3.6.0 and 5.1.0 |
+| Output layout | `ratio_<r>/level_<l>dB/`, `{scenario}_{index}.wav`, one `manifest.csv` | Path templates, e.g. `{split}/{scenario}/{noise}/snr_{snr_db:02d}/{language}/{duration_bucket}/{id}.wav`, with one AudioFolder `metadata.parquet` per configurable folder level, all written with one explicit Arrow schema | Layout agreed for `noisy`, and load-tested with `datasets` 3.6.0 and 5.1.0 |
 | Noise excerpt | Sequential cursor across files (offsets depend on file order) | `random_offset` **seeded per output group** (source id, scenario, noise kind), so every level of a file uses the same excerpt. The sequential cursor stays for `middle`. | Proposed for level comparisons |
 | Normalization | Peak normalization always, as `lf.scale_signal` does | Configurable. `none` plus a clipping guard for the skylar scenarios; `peak` for `middle` | Proposed: peak normalization would change the level the 0 dB case is defined at |
 | How many files | Every sweep variant for every file | **Population policy** per split: which factors are crossed (every value per file) and which are assigned (one balanced value per file) | File-count math in Plan 3 §3 |
 | Timestamps | not handled | `words` (and `segments`, if present) shifted by the speech offset. Whisper-only fields dropped. | Your timestamp-shift example, corrected |
 | Paper scenario name | `paper_middle` | `middle` | Your edit to the YAML |
+| Metadata format | | `metadata.parquet` with a fixed Arrow schema, for the clean input and the noisy output. AudioFolder infers each `metadata.jsonl`'s types separately and refuses to combine a column that is all-null in one file (`dnsmos` in `es`, `locale` in `en`) with the same column typed elsewhere. | Contract change from the skylar side after the first real end-to-end run |
 | Python | | LibriVAD needs 3.14: it uses PEP 758 `except A, B:` syntax at [librispeech_functions.py:172](../../src/librivad/generation/librispeech_functions.py#L172) and [create_labels.py:186](../../src/librivad/generation/creation_scripts/create_labels.py#L186). skylar-dataset must stay below 3.14 while it uses `datasets` 3.6. So the two talk through a **CLI and files** (§7), not imports. | Found while planning |
 
 ---
@@ -58,7 +59,7 @@ Already decided, not reopened here:
 Proposed and used as defaults, but **not confirmed yet** (see
 `/mnt/HD1TB/skylar-dataset/docs/plans/00-open-decisions.md`):
 - L1: folder order `{split}/{scenario}/{noise}/snr_XX/{lang}/{bucket}`.
-- L2: a `metadata.jsonl` in each language folder.
+- L2: a `metadata.parquet` in each language folder.
 - L5: `noisy` inherits its splits from `clean`.
 - L6–L10: the rendering rules in §6.
 
@@ -99,7 +100,7 @@ come from DEMAND, built by `create_DEMAND_noises.py`.
 ## 3. Design principles
 
 - **Plan, then render.** Build a complete, JSON-serializable list of `FileSpec`s first: sources, segment bounds, noise file and offset, gains, output path, metadata row. Then render in parallel. This gives `--dry-run`, counts, disk estimates and limit checks before anything is written.
-- **The corpus is described by config and a file format, never by code.** There are two adapters, `path_pattern` (LibriSpeech) and `audiofolder_jsonl` (skylar). No `if dataset == …` anywhere.
+- **The corpus is described by config and a file format, never by code.** There are two adapters, `path_pattern` (LibriSpeech) and `audiofolder` (skylar). No `if dataset == …` anywhere.
 - **Each file is deterministic by itself.** Every random choice for an output comes from a hash of `(seed, source id, scenario, noise kind)`, never from its position in a list. So resuming, `--limit`, building one split, or changing the worker count produce byte-identical files. `middle` keeps the sequential cursor, only for parity.
 - **Conditions are both folders and columns.** Every value in a path template is also a metadata field, so filtering by column and browsing by folder agree.
 - **Labels and timestamps are written with the audio,** from the same `FileSpec`. A filename is never parsed to rebuild them.
@@ -114,7 +115,7 @@ come from DEMAND, built by `create_DEMAND_noises.py`.
 ```mermaid
 flowchart LR
     Y["scenarios.yaml"] --> C["config.py<br/>load · merge · validate"]
-    C --> D["corpus.py<br/>path_pattern · audiofolder_jsonl"]
+    C --> D["corpus.py<br/>path_pattern · audiofolder"]
     D --> L["labels.py<br/>textgrid · npy · words · none"]
     C --> N["noise.py<br/>file_per_split · extracted_from_dataset"]
     D --> P["planner.py<br/>speech block · noise length · population"]
@@ -124,7 +125,7 @@ flowchart LR
     P --> R["render.py<br/>assemble · loudness · clip guard"]
     R --> O["layout.py + metadata.py<br/>paths · rows · timestamp shift"]
     O --> W[(".wav")]
-    O --> M[("metadata.jsonl per folder")]
+    O --> M[("metadata.parquet per folder")]
     O --> Z[(".npy labels, optional")]
 ```
 
@@ -157,12 +158,12 @@ seed: 1234
 
 dataset:
   name: skylar_clean
-  adapter: audiofolder_jsonl
+  adapter: audiofolder
   root: /mnt/HD1TB/skylar-dataset/outputs/SkylarDataset/clean
   schema_version: 1                       # must equal .provenance/schema.json (Plan 1 §7)
   sample_rate: 16000                      # every file is checked, never resampled here
   splits: {train: train, val: val, test: test}
-  metadata_glob: "{split}/*/metadata.jsonl"
+  metadata_glob: "{split}/*/{metadata_file}"     # metadata_file from schema.json
   id_field: id
   passthrough_fields: [language, duration_bucket, text, speaker, dnsmos, dataset, component, locale, source_id, source]
   labels:
@@ -172,16 +173,17 @@ dataset:
   continuity: null                        # no utterance is a continuation of another
 
 noise_sources:                            # one entry per kind; path has {split}
-  babble:    {type: file_per_split, path: /mnt/HD1TB/LibriVAD/files/Noises/Babble_noise/Babble_noise_{split}.wav}
-  ssn:       {type: file_per_split, path: /mnt/HD1TB/LibriVAD/files/Noises/SSN_noise/SSN_noise_{split}.wav}
-  office:    {type: file_per_split, path: /mnt/HD1TB/LibriVAD/files/Noises/Office_noise/Office_noise_{split}.wav}
+  babble:    {type: file_per_split, path: "/mnt/HD1TB/LibriVAD/files/Noises/Babble_noise/Babble_noise_{split}.wav"}
+  ssn:       {type: file_per_split, path: "/mnt/HD1TB/LibriVAD/files/Noises/SSN_noise/SSN_noise_{split}.wav"}
+  office:    {type: file_per_split, path: "/mnt/HD1TB/LibriVAD/files/Noises/Office_noise/Office_noise_{split}.wav"}
   # domestic, nature, public, street, transport, city: same pattern
+  # (quote the path: an unquoted {split} breaks a YAML flow mapping)
 
 output:
   root: /mnt/HD1TB/skylar-dataset/outputs/SkylarDataset/noisy
   path: "{split}/{scenario}/{noise}/snr_{snr_db:02d}/{language}/{duration_bucket}/{id}.wav"
   metadata_dir: "{split}/{scenario}/{noise}/snr_{snr_db:02d}/{language}"
-  metadata_format: audiofolder_jsonl      # file_name relative to metadata_dir
+  metadata_format: parquet                # one explicit schema; file_name relative to metadata_dir
   write_npy_labels: false                 # G7
   dtype: int16
   normalization: none                     # none | peak
@@ -266,6 +268,7 @@ New rules:
 ```
 speech = source[labels == 1]                         # from words; all samples when labels are none
 skip with reason "too_little_speech" when len(speech) < min_speech_s · sr
+skip with reason "too_quiet" when RMS(speech) < max(min_speech_rms_dbfs, 1.89 LSB · 10^(max snr_db / 20))
 ref_rms   = RMS(speech)
 noise_rms = RMS(excerpt)                             # whole excerpt, before fades; skip if 0
 gain      = ref_rms · 10 ** (−snr_db / 20) / noise_rms
@@ -290,7 +293,7 @@ gain      = ref_rms · 10 ** (−snr_db / 20) / noise_rms
 
 ### 6.5 Clipping guard (replaces peak normalization for skylar)
 
-- After assembly in float, if `max|x| > 0.999`, scale **the whole file** by `0.999 / max|x|` and record `clip_gain_db`. The relative level is kept; the absolute level changes.
+- After assembly, only if rounding to int16 would clip (a sample above 32767 or below −32768), scale **the whole file** so its peak lands exactly on full scale, and record `clip_gain_db`. (A first version used 0.999 of full scale; real sources often already peak at full scale, so it fired at every level.) The relative level is kept; the absolute level changes.
 - With `per_group` (the default), the guard gain is computed over every crossed level of the same `(id, scenario, noise)` group, using the loudest, and applied to all of them. The speech is then at the same absolute level in every `snr_XX` folder of that file, which keeps level comparisons clean.
 - Convert to int16 with `round(x · 32767)`.
 - `middle` keeps `normalization: peak` for parity.
@@ -383,7 +386,7 @@ exactly as Plan 1's writer writes them, `schema.json` included.
 
 Done and committed (d27807c). `generation/` and `vad/`, lowercase module names, imports, `.env`, `scripts/main_vit.sh`, tests and docs updated. 19 tests, `ruff check` and `ty check` passed.
 
-### Phase 1: Config
+### Phase 1: Config ✅
 
 - Add `pydantic` and `pyyaml` (G1).
 - Models for §5, the deep merge (scenario over `defaults`, dicts merged at every level, lists replaced), path resolution relative to `PROJECT_ROOT`, and the condition grid.
@@ -393,12 +396,12 @@ Done and committed (d27807c). `generation/` and `vad/`, lowercase module names, 
   - Merged values per scenario.
   - Grid size: 2 scenarios × 9 noises × 8 levels = 144 conditions.
 
-### Phase 2: Corpus adapters and labels
+### Phase 2: Corpus adapters and labels ✅
 
 - `corpus.py`:
   - `path_pattern`: the pattern becomes a regex with named groups; `exclude_list`; continuity grouping and ordering.
-  - `audiofolder_jsonl`:
-    - Read each `metadata.jsonl` matched by `metadata_glob`, and resolve `file_name` against its folder.
+  - `audiofolder`:
+    - Read each `metadata.parquet` (the name comes from `metadata_file` in `.provenance/schema.json`) matched by `metadata_glob`, and resolve `file_name` against its folder. Every file must have the same column types.
     - Check `schema_version`, the sample rate and mono with `soundfile.info`, and `duration` against the frames (±1 sample).
     - Ids must be unique.
     - Any violation exits with code 4.
@@ -410,7 +413,7 @@ Done and committed (d27807c). `generation/` and `vad/`, lowercase module names, 
   - `words` labels on hand-made rows, boundary samples included.
   - The adapter rejects a row whose wav is 24 kHz.
 
-### Phase 3: Noise sources
+### Phase 3: Noise sources ✅
 
 - `file_per_split`: check 16 kHz and mono when opened, and memory-map long files.
 - `extracted_from_dataset`: v1's `generate_silence_signal` with a cache.
@@ -422,7 +425,7 @@ Done and committed (d27807c). `generation/` and `vad/`, lowercase module names, 
   - Wrap-around equals the current `np.tile` behavior.
   - No discontinuity at fade edges.
 
-### Phase 4: Planner
+### Phase 4: Planner ✅
 
 - Compositions: `single` for skylar; `contiguous` and `concatenate` with `group_by` and `max_utterances` for LibriSpeech.
 - Noise length modes (§6.1), skip reasons (`too_long`, `too_little_speech`), population (§6.7).
@@ -435,7 +438,7 @@ Done and committed (d27807c). `generation/` and `vad/`, lowercase module names, 
   - `--split test` alone gives the same specs as the test part of a full plan.
   - Skip rules at the boundary (`S = 28 s` with `min_noise_s = 2`).
 
-### Phase 5: Render, layout, metadata, CLI
+### Phase 5: Render, layout, metadata, CLI ✅
 
 - `render.py` (§6.2–6.5), `layout.py` (templates, atomic writes, resume, one metadata writer), `metadata.py` (§6.6), `build_scenarios.py` (§7), disk check reusing `check_disk_space`.
 - Each rendered file is checked before it is written:
@@ -450,16 +453,24 @@ Done and committed (d27807c). `generation/` and `vad/`, lowercase module names, 
   - Rows are valid JSONL with stable types.
   - Resume renders nothing new, and `--workers 1` and `--workers 8` give identical bytes.
 
-### Phase 6: Parity with the paper dataset
+### Phase 6: Parity with the paper dataset ✅
 
 - Run `middle` on dev-clean and test-clean, and compare with `files/datasets/LibriSpeechConcat` and `files/Labels/LibriSpeechConcat`. Expected: same names and sample counts, identical labels, audio within ±1 LSB.
 - Make it a slow test (`@pytest.mark.slow`), skipped when `files/` is missing.
 - Then turn `create_LibriSpeechConcat.py` into a wrapper. `setup.py` keeps calling it unchanged.
 
-### Phase 7: Skylar-shaped golden test
+
+**Result (2026-10-31).**
+- **Audio:** all 2,661 dev-clean and test-clean files have the same names and lengths and are bit-identical (0 LSB). Train: the 14,267 planned names match, and the last 40 pairs are bit-identical.
+- **Labels:** 123 files differ from `files/Labels/LibriSpeechConcat`. Each difference comes from a bug in `create_labels.py`:
+  - 91 pairs that cross a chapter or speaker get an empty first half, because the first TextGrid is looked up in the second file's folder.
+  - 32 labels end at the TextGrid's last time instead of at the audio's length.
+- `create_LibriSpeechConcat.py` is now a wrapper. Labels are still written by `create_labels.py`, so `setup.py` produces the same files as before.
+
+### Phase 7: Skylar-shaped golden test ✅
 
 - A fixture with 3 items per (language, split) and the exact Plan 1 schema, rendered with the §5.1 config cut down to 2 noises and 3 levels.
-- Check the folder tree against `noisy/{split}/{scenario}/{noise}/snr_XX/{lang}/{bucket}/{id}.wav`, and that each language folder has one `metadata.jsonl`.
+- Check the folder tree against `noisy/{split}/{scenario}/{noise}/snr_XX/{lang}/{bucket}/{id}.wav`, and that each language folder has one `metadata.parquet`, all with one schema.
 - Check the population counts per split, and the paired excerpts across levels: normalized cross-correlation of the noise blocks ≥ 0.9999.
 - Loading with `datasets` is tested in Plan 3, on the skylar side. LibriVAD does not take `datasets` as a dependency for this.
 
@@ -467,7 +478,7 @@ Done and committed (d27807c). `generation/` and `vad/`, lowercase module names, 
 
 Take labels from the metadata or `labels_root` instead of `remove_silence`'s path guessing, accept scenario output folders as input, and implement `post_mixing` (G4).
 
-### Phase 9: Documentation
+### Phase 9: Documentation ✅
 
 - Usage guide for the builder.
 - Update `concat_scenarios.example.yaml` to version 2 (§5.2).

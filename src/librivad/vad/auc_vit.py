@@ -34,9 +34,7 @@ def uW_context(
 
     # right context
     R1: NDArray[Any] = np.concatenate((np.array([1]), np.arange(1 + u, w, u)))  #
-    R: NDArray[Any] = np.sort(
-        np.unique(np.concatenate((R1, np.array([w]))))
-    )  # array([1, 10, 19])
+    R: NDArray[Any] = np.sort(np.unique(np.concatenate((R1, np.array([w])))))  # array([1, 10, 19])
 
     # both L and R are symmetric
     for i in np.arange(len(L) - 1, -1, -1):  # negative indices

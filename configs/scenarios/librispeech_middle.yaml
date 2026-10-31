@@ -1,0 +1,48 @@
+# LibriSpeechConcat as published with the paper, written by the scenario builder.
+#
+# Pairs of LibriSpeech files in sorted order (speaker changes allowed), joined by a gap of
+# 25 % of the pair (20 % of the file) cut from the LibriSpeech pauses with a sequential
+# cursor that wraps, at a fixed gain of 0.001, then peak-normalized to full scale.
+# `create_LibriSpeechConcat.py` runs this config. Labels stay with `create_labels.py`.
+#
+# Paths are relative to PROJECT_ROOT (.env).
+
+version: 2
+seed: 1234
+
+dataset:
+  name: librispeech
+  adapter: path_pattern
+  root: files/datasets/LibriSpeech
+  sample_rate: 16000
+  splits: {train: train-clean-100, val: dev-clean, test: test-clean}
+  path_pattern: "{split}/{speaker}/{chapter}/{speaker}-{chapter}-{utt}.wav"
+  exclude_list: files/Forced_alignments/librispeech_alignments/unaligned.txt  # 4 train files
+  labels:
+    source: textgrid
+    dir: files/Forced_alignments/librispeech_alignments
+    path: "{split_folder}/{speaker}/{chapter}/{stem}.TextGrid"
+    tier: words
+    silence_token: ""
+
+noise_sources:
+  dataset_silence:
+    type: extracted_from_dataset
+    split: train
+    cache: files/datasets/LibriSpeech/train100_silence.wav
+
+output:
+  root: files/datasets/LibriSpeechConcat
+  path: "{split_folder}/{last[speaker]}/{last[chapter]}/{first[stem]}_+_{last_suffix}.wav"
+  metadata_dir: null
+  write_npy_labels: false
+  normalization: peak
+  peak_dbfs: 0.0
+
+scenarios:
+  - name: middle
+    layout: [speech, noise, speech]
+    speech_block: {composition: concatenate, max_utterances: 1}
+    noise_length: {mode: ratio, noise_ratio: 0.20}
+    noise_block: {source: dataset_silence, slicing: sequential_wrap, fade_ms: 0}
+    loudness: {measure: fixed_gain, gain: 0.001}

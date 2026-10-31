@@ -184,9 +184,7 @@ class KWT(nn.Module):
 
         self.to_latent: nn.Identity = nn.Identity()
 
-        self.mlp_head: nn.Sequential = nn.Sequential(
-            nn.LayerNorm(dim), nn.Linear(dim, num_classes)
-        )
+        self.mlp_head: nn.Sequential = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, num_classes))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [512, 100, 39]  # ty: ignore[invalid-mutable-override]
         x = x.permute(0, 2, 1)  # > [512, 39, 100]
@@ -238,9 +236,7 @@ class WarmupCosineAnnealingLR(LambdaLR):
                 )  # Convert to tensor with float32 dtype
                 return float(
                     self.eta_min
-                    + 0.5
-                    * (1 - self.eta_min)
-                    * (1 + torch.cos(progress_tensor * torch.pi)).item()
+                    + 0.5 * (1 - self.eta_min) * (1 + torch.cos(progress_tensor * torch.pi)).item()
                 )
 
         super().__init__(optimizer, lr_lambda, last_epoch)
@@ -269,9 +265,7 @@ def readBatchScp(
     feat_list: list[NDArray[Any]] = []
     y_train_list: list[NDArray[Any]] = []
     X_batch: list[tuple[NDArray[Any] | str, NDArray[Any] | str]] = list(
-        Parallel(n_jobs=num_cores)(
-            delayed(myfun)(str(batch_scp[i])) for i in range(len(batch_scp))
-        )
+        Parallel(n_jobs=num_cores)(delayed(myfun)(str(batch_scp[i])) for i in range(len(batch_scp)))
     )
     for t1, t2 in X_batch:
         try:

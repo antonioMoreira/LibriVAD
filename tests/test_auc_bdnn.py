@@ -15,9 +15,7 @@ class DummyBDNNModel(nn.Module):
         super().__init__()
         self.b_dnn_win: int = b_dnn_win
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:  # ty: ignore[invalid-mutable-override]
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:  # ty: ignore[invalid-mutable-override]
         batch_size, frames, _ = x.shape
         logits = torch.full((batch_size, frames, self.b_dnn_win), 0.8, dtype=torch.float32)
         return logits, logits, logits

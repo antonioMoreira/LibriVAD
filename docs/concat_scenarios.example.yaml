@@ -1,14 +1,16 @@
 # =============================================================================
-# Concat scenarios: PROPOSED configuration (not implemented yet)
+# Concat scenarios on LibriSpeech: example configuration, version 2
 # =============================================================================
-# Describes how a configurable create_LibriSpeechConcat.py would build each
-# file. Nothing in the repository reads this file today.
+# Read by the scenario builder:
+#   uv run python -m librivad.generation.build_scenarios \
+#       --config docs/concat_scenarios.example.yaml --dry-run
+# Usage guide: docs/scenario_builder.md. Paths are relative to PROJECT_ROOT.
 #
 # The file has two independent parts:
 #   dataset   : everything specific to the source corpus (folder layout, the
-#               metadata fields, where labels come from, and which files are
-#               consecutive pieces of one recording). Swap this block to use
-#               another corpus.
+#               fields in each path, where labels come from, and which files
+#               are consecutive pieces of one recording). Swap this block to
+#               use another corpus.
 #   scenarios : the construction rules. They only use generic concepts and
 #               the field names that `dataset` declares.
 #
@@ -17,21 +19,28 @@
 #   speech block : one or more utterances joined back to back.
 #   noise block  : the inserted non-speech segment (label 0).
 #   noise_ratio  : len(noise block) / len(final file), in [0, 1).
-#   noise_level  : RMS(noise block) relative to RMS(speech samples of the
-#                  speech block), in dB. Same definition as the SNR used by
-#                  create_LibriVAD.py, with the sign flipped:
-#                  noise_level_db = -SNR.
+#   snr_db       : how far the noise block's RMS sits below the RMS of the
+#                  speech samples (label 1) of the speech block, in dB. The
+#                  same definition as the SNR of create_LibriVAD.py. Version 1
+#                  of this file called it noise_level_db, with the sign flipped.
 #
-# Worked example (scenario 1 below): target 30 s, noise_ratio 0.5
+# Worked example (noise_first below): target 30 s, noise_ratio 0.5
 #   -> speech block >= 15 s
-#   -> noise block = 0.5 / (1 - 0.5) * len(speech block) ~= 15 s
+#   -> noise block = floor(0.5 / (1 - 0.5) * len(speech block)) ~= 15 s
 #   -> final file ~= 30 s, exactly 50 % noise block.
 #
 # Merging: every scenario is deep-merged over `defaults`, so a scenario only
-# lists the keys it changes, at any nesting level.
+# lists the keys it changes, at any nesting level. `conditions` lists the
+# values a scenario sweeps; each combination becomes its own folder.
+#
+# Changes from version 1: version 2; noise_level_db -> snr_db (negated);
+# noise_ratio moved under noise_length (or into conditions to sweep it);
+# output.filename -> output.path (a template for the whole relative path);
+# post_mixing, overshoot_policy, ratio_basis and lufs are not implemented and
+# were removed.
 # =============================================================================
 
-version: 1
+version: 2
 seed: 1234                      # Controls every random choice (noise offsets, sampling).
 
 # -----------------------------------------------------------------------------
@@ -39,6 +48,7 @@ seed: 1234                      # Controls every random choice (noise offsets, s
 # -----------------------------------------------------------------------------
 dataset:
   name: librispeech
+  adapter: path_pattern         # path_pattern | audiofolder
   root: files/datasets/LibriSpeech
   sample_rate: 16000
   splits:                       # Generic split name -> folder in this corpus.
@@ -46,37 +56,31 @@ dataset:
     val: dev-clean
     test: test-clean
 
-  # How to read metadata fields for each file. Pick one:
-  #   path_pattern : fields parsed from the path relative to `root`
-  #   manifest     : a CSV with at least `path` and `split`; every other column
-  #                  becomes a field.
+  # Fields parsed from the path relative to `root`.
   path_pattern: "{split}/{speaker}/{chapter}/{speaker}-{chapter}-{utt}.wav"
-  # manifest: path/to/metadata.csv
-
   exclude_list: files/Forced_alignments/librispeech_alignments/unaligned.txt
 
   # Where the speech/non-speech labels of each utterance come from:
-  #   textgrid   : forced alignments (empty word = silence)
-  #   npy        : precomputed 0/1 array per file
-  #   rttm       : speech segments from an RTTM file
-  #   energy_vad : estimated on the fly (approximate)
-  #   none       : no labels; the whole utterance is treated as speech
+  #   textgrid : forced alignments (empty word = silence)
+  #   npy      : precomputed 0/1 array per file
+  #   words    : the word list of a metadata row (audiofolder)
+  #   none     : no labels; the whole utterance is treated as speech
   labels:
     source: textgrid
     dir: files/Forced_alignments/librispeech_alignments
+    path: "{split_folder}/{speaker}/{chapter}/{stem}.TextGrid"
     tier: words
     silence_token: ""
 
   # Which files are consecutive pieces of one continuous recording, and in
-  # what order. Leave it as null when the corpus has no such notion (isolated
-  # commands, read prompts, files from different sessions); the `contiguous`
-  # composition is then unavailable.
+  # what order. Leave it as null when the corpus has no such notion; the
+  # `contiguous` composition is then unavailable.
   continuity:
     group_by: [speaker, chapter]
     order_by: utt
 
 # -----------------------------------------------------------------------------
-# Noise sources that scenarios can refer to by key
+# Noise sources that scenarios refer to by name
 # -----------------------------------------------------------------------------
 noise_sources:
   dataset_silence:              # Label-0 regions cut from the dataset itself (room tone).
@@ -91,13 +95,19 @@ noise_sources:
     path: files/Noises/City_noise/City_noise_{split}.wav
 
 # -----------------------------------------------------------------------------
-# Output locations
+# Output
 # -----------------------------------------------------------------------------
-# Every combination of the `sweep` lists becomes its own folder:
-#   <output_root>/<scenario>/<split>/ratio_<r>/level_<l>dB/...
-output_root: files/datasets/ConcatScenarios
-labels_root: files/Labels/ConcatScenarios
-manifest: files/datasets/ConcatScenarios/manifest.csv   # Source files + segment bounds per output.
+output:
+  root: files/datasets/ConcatScenarios
+  # Template of each output's path below `root`. A scenario can replace it with
+  # its own `output_path`. Every swept condition must appear in it.
+  path: "{scenario}/{split_folder}/ratio_{noise_ratio}/snr_{snr_db:02d}/{first[stem]}.wav"
+  metadata_dir: null            # set to a parent folder template to write metadata.parquet
+  write_npy_labels: true        # one 0/1 .npy per output, same relative path
+  labels_root: files/Labels/ConcatScenarios
+  normalization: peak           # peak (like lf.scale_signal) | none
+  peak_dbfs: -1.0
+  clip_guard: "off"             # only used with normalization: none
 
 # -----------------------------------------------------------------------------
 # Defaults (dataset-agnostic)
@@ -105,34 +115,26 @@ manifest: files/datasets/ConcatScenarios/manifest.csv   # Source files + segment
 defaults:
   speech_block:
     # How the speech block is built:
-    #   single      : exactly one utterance. The target is matched by choosing
-    #                 an utterance whose length is close to the speech target.
-    #                 Works with any corpus.
+    #   single      : one utterance per speech slot. With a speech target and
+    #                 `duration_tolerance`, only utterances close to the target.
     #   contiguous  : consecutive utterances from one `dataset.continuity` group,
     #                 in order, so the block is (nearly) one continuous recording.
-    #                 Requires `dataset.continuity`.
-    #   concatenate : any utterances joined together. Every join is an
-    #                 artificial cut (speaker, channel or room may change).
+    #   concatenate : any utterances joined together, optionally only within
+    #                 `group_by`. Every join is an artificial cut.
     composition: single
-
-    # single: accept an utterance if |len - speech target| <= this fraction.
     duration_tolerance: 0.15
-
-    # contiguous / concatenate:
     max_utterances: 10
-    group_by: []                # concatenate only: join only files that share
-                                # these dataset fields (e.g. [speaker]).
+    group_by: []
     join_gap_s: 0.0             # Silence added at each join (label 0).
-    join_fade_ms: 10            # Cross-fade at each join to avoid clicks.
-
+    join_fade_ms: 10            # Fade at each join to avoid clicks.
     selection: sequential       # sequential (reproducible) | shuffled (uses seed)
 
-    # When the speech block ends up longer than its target:
-    #   extend_noise  -> keep noise_ratio exact, total length drifts above target
-    #   keep_duration -> keep total length exact, noise_ratio drifts below target
-    overshoot_policy: extend_noise
-    # Utterances that cannot reach the target are dropped | emitted_short.
-    leftover_policy: dropped
+  noise_length:
+    # ratio          : noise = floor(speech * p / (1 - p)); the speech target is
+    #                  (1 - p) * target_duration_s when a target is set.
+    # fill_to_target : noise = target - speech; skipped below min_noise_s.
+    mode: ratio
+    target_duration_s: 30
 
   noise_block:
     source: dataset_silence
@@ -140,29 +142,9 @@ defaults:
     fade_ms: 10
 
   loudness:
-    measure: rms                # rms | lufs | fixed_gain
-    # true = measure the speech block on label-1 samples only. Forced to false
-    # when `dataset.labels.source` is none.
+    measure: rms                # rms | fixed_gain
+    # true = measure the speech block on label-1 samples only.
     speech_only: true
-
-  # How noise_ratio is checked:
-  #   segment -> only the inserted noise block counts as noise
-  #   label   -> every label-0 sample counts (noise block + natural pauses)
-  ratio_basis: segment
-  ratio_tolerance: 0.02
-
-  output:
-    normalization: peak         # peak (like lf.scale_signal) | none
-    peak_dbfs: -1.0
-    dtype: int16
-    filename: "{scenario}_{index:07d}.wav"   # Sources are listed in the manifest.
-    write_labels: true
-
-  # Whether create_LibriVAD.py adds noise to the whole file afterwards.
-  post_mixing:
-    enabled: false
-    noises: [Babble_noise, City_noise]
-    snrs_db: [-5, 0, 5, 10, 15, 20]
 
 # -----------------------------------------------------------------------------
 # Scenarios
@@ -172,71 +154,67 @@ scenarios:
   # Scenario 1: Noise + Audio_i
   - name: noise_first
     layout: [noise, speech]
-    target_duration_s: 30
     speech_block:
       composition: contiguous   # LibriSpeech has continuity; use `single` otherwise.
-    sweep:
+    conditions:
       noise_ratio: [0.25, 0.50, 0.75]
-      noise_level_db: [-30, -20, -10, 0]   # 0 dB = noise as loud as speech.
+      snr_db: [30, 20, 10, 0]   # 0 dB = noise as loud as speech.
 
   # Scenario 2: Audio_i + Noise
   - name: noise_last
     layout: [speech, noise]
-    target_duration_s: 30
     speech_block:
       composition: contiguous
-    sweep:
+    conditions:
       noise_ratio: [0.25, 0.50, 0.75]
-      noise_level_db: [-30, -20, -10, 0]
+      snr_db: [30, 20, 10, 0]
 
   # Scenario 1 on a corpus without continuity: one utterance per file, so the
   # 30 s target becomes "utterances of about 15 s" for ratio 0.5.
   - name: noise_first_single
     layout: [noise, speech]
-    target_duration_s: 30
     speech_block:
       composition: single
       duration_tolerance: 0.20
     noise_block:
-      source: babble
+      source: null
       slicing: random_offset
-    sweep:
+    conditions:
+      noise: [babble]
       noise_ratio: [0.50]
-      noise_level_db: [-10]
+      snr_db: [10]
+    output_path: "{scenario}/{split_folder}/{noise}/snr_{snr_db:02d}/{first[stem]}.wav"
 
-  # Reference: the current paper setup (LibriVAD-Concat). Pairs of files in
-  # sorted order (speaker changes allowed), gap = 25 % of the pair (20 % of
-  # the file), fixed gain 0.001, labels rebuilt from the `_+_` filename.
+  # Reference: the paper setup (LibriSpeechConcat). Pairs of files in sorted
+  # order (speaker changes allowed), gap = 25 % of the pair (20 % of the file),
+  # fixed gain 0.001, peak-normalized to full scale. The working copy of this
+  # scenario is configs/scenarios/librispeech_middle.yaml.
   - name: middle
     layout: [speech, noise, speech]
-    target_duration_s: null     # No target: one utterance per speech slot.
     speech_block:
       composition: concatenate
       max_utterances: 1
-      group_by: []
       join_fade_ms: 0
+    noise_length:
+      mode: ratio
+      noise_ratio: 0.20
+      target_duration_s: null   # No target: one utterance per speech slot.
     noise_block:
       fade_ms: 0
     loudness:
       measure: fixed_gain
       gain: 0.001
-    output:
-      peak_dbfs: 0.0
-      filename: "{first}_+_{last}.wav"
-      write_labels: false       # create_labels.py rebuilds them from the filename.
-    sweep:
-      noise_ratio: [0.20]
-      noise_level_db: [null]
+    output_path: "{scenario}/{split_folder}/{last[speaker]}/{last[chapter]}/{first[stem]}_+_{last_suffix}.wav"
 
 # -----------------------------------------------------------------------------
-# Validation rules the loader would enforce
+# Validation rules the loader enforces (see docs/scenario_builder.md)
 # -----------------------------------------------------------------------------
-# - 0 <= noise_ratio < 1.
-# - noise_level_db required unless loudness.measure == fixed_gain.
 # - layout contains exactly one `noise`; `speech` appears once or twice.
-# - composition: contiguous requires `dataset.continuity`.
-# - Fields used in group_by / continuity / filename must exist in the dataset
-#   (from path_pattern or manifest).
-# - noise source `extracted_from_dataset` requires `dataset.labels.source` != none.
-# - post_mixing.enabled with ratio_basis: segment warns that the noise block
-#   will also receive the post-mixing noise.
+# - composition contiguous requires `dataset.continuity`.
+# - Fields used in group_by / continuity / templates must exist in the dataset.
+# - noise source `extracted_from_dataset` requires labels other than none.
+# - mode ratio: 0 <= noise_ratio < 1, given once (noise_length or conditions).
+# - mode fill_to_target: target_duration_s > min_noise_s >= 0.
+# - snr_db >= constraints.min_snr_db when the constraint is set.
+# - loudness fixed_gain excludes snr_db; rms requires it.
+# - population: every factor appears once per split, in crossed or assigned.

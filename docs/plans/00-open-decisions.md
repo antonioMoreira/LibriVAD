@@ -11,6 +11,19 @@ IDs match Plan 2's decision table. The "Recommendation" column is what Plan 2
 is written against. To answer, reply with the ID and your choice, and the
 answer gets recorded here and in the plan.
 
+**Implementation status (2026-10-31).** Phases 1–7 and 9 of Plan 2, and part of
+Phase 10, are implemented and not yet reviewed. Every item below was implemented
+with its recommended default **pending your confirmation**; none is marked as
+decided. In detail:
+- G13: Phase 8 was skipped.
+- G14: `ruff format` was applied to the four files, and `scikit-learn` and `joblib`
+  were declared. The other Phase 10 items were left alone.
+- G15: the SVG was renamed.
+- G11: `concatenate` and `contiguous` were both implemented, not deferred.
+- L1–L11: implemented as written in Plan 2 §5.1 and §6.
+- Changing any of these answers is a config or small code change. See
+  [`docs/scenario_builder.md`](../scenario_builder.md).
+
 ---
 
 ## 1. Builder design
