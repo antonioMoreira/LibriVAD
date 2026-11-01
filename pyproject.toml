@@ -6,43 +6,58 @@ readme = "README.md"
 authors = [
     { name = "Antonio Moreira", email = "antonionmoreira@gmail.com" }
 ]
-requires-python = ">=3.14.7"
+requires-python = ">=3.12"
+# The core is what the scenario builder (`librivad.generation`) needs, so another project
+# can import it without the paper scripts or the VAD models. Those are the extras below;
+# the `dev` group installs both for work inside this repository.
 dependencies = [
-    "av>=19.0.2",
-    "einops>=0.8.2",
-    "joblib>=1.6.0",
-    "librosa>=1.0.0",
-    "matplotlib>=3.11.2",
     "numpy>=2.5.4",
-    "pandas>=3.0.6",
     "praat-textgrids>=1.4.0",
     "pyarrow>=26.0.0",
     "pydantic>=2.14.2",
-    "pydub>=0.25.1",
     "python-dotenv>=1.2.4",
     "pyyaml>=6.0.3",
+    "soundfile>=0.14.0",
+    "tqdm>=4.70.1",
+]
+
+[project.optional-dependencies]
+# creation_scripts/, setup.py, validate.py and scripts/: rebuilding the paper's dataset
+paper = [
+    "av>=19.0.2",
+    "librosa>=1.0.0",
+    "matplotlib>=3.11.2",
+    "pandas>=3.0.6",
+    "pydub>=0.25.1",
     "requests>=2.34.2",
     "rvadfast>=0.10.0",
+    "scipy>=1.18.1",
+]
+# vad/: the bDNN and ViT models and their metrics
+vad = [
+    "einops>=0.8.2",
+    "joblib>=1.6.0",
     "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
-    "soundfile>=0.14.0",
     "torch>=2.14.1",
-    "tqdm>=4.70.1",
 ]
 
 [project.scripts]
 librivad = "librivad:main"
 
 [build-system]
-requires = ["uv_build>=0.13.0,<0.14.0"]
-build-backend = "uv_build"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/librivad"]
 
 [tool.uv]
 link-mode = "copy"
 
 [tool.ruff]
 line-length = 100
-target-version = "py314"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -52,7 +67,7 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.ty.environment]
-python-version = "3.14"
+python-version = "3.12"
 
 [tool.ty.src]
 include = ["src", "*.py"]
@@ -65,6 +80,7 @@ addopts = "-m 'not slow'"
 
 [dependency-groups]
 dev = [
+    "librivad[paper,vad]",
     "pytest>=9.1.1",
     "ruff>=0.17.1",
     "ty>=0.0.90",

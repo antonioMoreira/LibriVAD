@@ -15,13 +15,10 @@ from collections.abc import Iterator
 from itertools import product
 from pathlib import Path
 from string import Formatter
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 import yaml
-from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
-
-load_dotenv()
 
 FACTOR_KEYS: tuple[str, ...] = ("noise", "noise_ratio", "snr_db")
 """Condition keys a scenario can sweep. `scenario` is always a factor as well."""
@@ -77,7 +74,7 @@ class DatasetConfig(_Model):
     continuity: ContinuityConfig | None = None
 
     @model_validator(mode="after")
-    def _adapter_fields(self) -> DatasetConfig:
+    def _adapter_fields(self) -> Self:
         if self.adapter == "path_pattern" and not self.path_pattern:
             raise ValueError("adapter path_pattern needs `path_pattern`")
         if unknown := set(self.splits) - set(SPLITS):
@@ -94,7 +91,7 @@ class NoiseSourceConfig(_Model):
     cache: Path | None = None
 
     @model_validator(mode="after")
-    def _type_fields(self) -> NoiseSourceConfig:
+    def _type_fields(self) -> Self:
         if self.type == "file_per_split" and (not self.path or "{split}" not in self.path):
             raise ValueError("file_per_split needs a `path` containing {split}")
         if self.type == "extracted_from_dataset" and (self.split is None or self.cache is None):
@@ -124,7 +121,7 @@ class OutputConfig(_Model):
     limits: Limits = Limits()
 
     @model_validator(mode="after")
-    def _labels_root(self) -> OutputConfig:
+    def _labels_root(self) -> Self:
         if self.write_npy_labels and self.labels_root is None:
             raise ValueError("write_npy_labels needs `labels_root`")
         return self

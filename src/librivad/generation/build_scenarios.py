@@ -1,7 +1,14 @@
 """
-Scenario builder CLI: plans and renders the outputs described by a version-2 scenario config.
+Scenario builder: plans and renders the outputs described by a version-2 scenario config.
 
-Usage:
+As a library, `run()` does the work and returns the report; it raises `ConfigError`,
+`ContractError` or `LimitsExceeded` instead of exiting:
+
+    from librivad.generation import config_from_dict, run
+
+    report = run(config_from_dict(raw, base=Path(".")), splits=["val"])
+
+As a command:
     uv run python -m librivad.generation.build_scenarios --config <scenarios.yaml> \\
         [--dry-run] [--report report.json] [--scenario NAME]... [--split train|val|test]... \\
         [--limit N] [--workers N] [--overwrite] [--check] [--allow-over-limits]
@@ -17,13 +24,15 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import soundfile as sf
+from dotenv import load_dotenv
 from tqdm import tqdm
 
 from librivad.generation.config import SPLITS, Config, ConfigError, load_config
@@ -45,16 +54,37 @@ EXIT_CONTRACT: int = 4
 REPO_ROOT: Path = Path(__file__).resolve().parents[3]
 
 
-def git_commit() -> dict[str, Any]:
-    """LibriVAD commit and whether the working tree has uncommitted changes."""
+class LimitsExceeded(RuntimeError):
+    """The plan breaks `output.limits` and `allow_over_limits` is False. Nothing was written."""
 
-    def run(*args: str) -> str:
+    def __init__(self, exceeded: list[str]) -> None:
+        super().__init__("limits exceeded: " + "; ".join(exceeded))
+        self.exceeded: list[str] = exceeded
+
+
+def provenance() -> dict[str, Any]:
+    """LibriVAD version, and its commit when running from a checkout (an editable install).
+
+    Installed as a wheel, the module sits in site-packages, which has no `.git` of its own;
+    asking git there could report the commit of whatever repository contains the venv.
+    """
+    try:
+        package_version: str | None = version("librivad")
+    except PackageNotFoundError:
+        package_version = None
+    info: dict[str, Any] = {"version": package_version, "commit": None, "dirty": None}
+    if not (REPO_ROOT / ".git").exists():
+        return info
+
+    def git(*args: str) -> str:
         result = subprocess.run(
             ["git", "-C", str(REPO_ROOT), *args], capture_output=True, text=True, check=False
         )
         return result.stdout.strip() if result.returncode == 0 else ""
 
-    return {"commit": run("rev-parse", "HEAD") or None, "dirty": bool(run("status", "--porcelain"))}
+    info["commit"] = git("rev-parse", "HEAD") or None
+    info["dirty"] = bool(git("status", "--porcelain"))
+    return info
 
 
 def make_noises(config: Config, adapter: CorpusAdapter) -> dict[str, NoiseSource]:
@@ -116,6 +146,7 @@ def build(
     workers: int,
     overwrite: bool,
     input_types: dict[str, Any] | None = None,
+    progress: bool = True,
 ) -> dict[str, Any]:
     """Render every selected, unfinished output. Returns the build section of the report.
 
@@ -150,7 +181,10 @@ def build(
         return rendered
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
-        for outcomes in tqdm(executor.map(run_group, todo), total=len(todo), desc="Rendering"):
+        outcomes_by_group = executor.map(run_group, todo)
+        for outcomes in tqdm(
+            outcomes_by_group, total=len(todo), desc="Rendering", disable=not progress
+        ):
             for outcome in outcomes:
                 if isinstance(outcome, RenderError):
                     stats["failed"] += 1
@@ -220,69 +254,123 @@ def check(
     return {"checked": checked, "problems": len(problems), "details": problems[:100]}
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args: argparse.Namespace = parse_args(argv)
+def run(
+    config: Config,
+    *,
+    scenarios: Sequence[str] | None = None,
+    splits: Sequence[str] | None = None,
+    limit: int | None = None,
+    workers: int = 8,
+    overwrite: bool = False,
+    dry_run: bool = False,
+    check_only: bool = False,
+    allow_over_limits: bool = False,
+    plan_file: Path | None = None,
+    progress: bool = True,
+    on_plan: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Plan, then render (or only check) the outputs of `config`. Returns the report.
+
+    `scenarios` and `splits` narrow the plan; `limit` keeps the first N outputs per
+    condition. `dry_run` only plans, and writes every planned output to `plan_file` when
+    given. `check_only` re-validates outputs already on disk; its problems are in
+    `report["check"]`. Failed renders are counted in `report["build"]`, not raised.
+    `on_plan` receives the report once the plan is ready, before anything is rendered.
+
+    Raises `ConfigError` (including unknown scenario names), `ContractError` when the
+    input corpus breaks its contract, and `LimitsExceeded` before writing anything.
+    """
     started: float = time.monotonic()
-    report: dict[str, Any] = {"librivad": git_commit(), "config": str(args.config)}
+    report: dict[str, Any] = {"librivad": provenance(), "config_hash": config.config_hash}
+    names: list[str] = [s.name for s in config.scenarios]
+    if scenarios and (unknown := set(scenarios) - set(names)):
+        raise ConfigError(f"unknown scenarios {sorted(unknown)}; config has {names}")
+    selected_splits: list[str] = [
+        s for s in SPLITS if s in config.dataset.splits and (not splits or s in splits)
+    ]
+    adapter: CorpusAdapter = make_adapter(config.dataset)
+    noises: dict[str, NoiseSource] = make_noises(config, adapter)
+    result: PlanResult = Planner(config, adapter, noises).plan(
+        selected_splits, list(scenarios) if scenarios else None, limit
+    )
+    report["plan"] = result.report
+    report["splits"] = selected_splits
+    if on_plan is not None:
+        on_plan(report)
+
+    if dry_run:
+        if plan_file is not None:
+            plan_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(plan_file, "w", encoding="utf-8") as handle:
+                for spec in result.specs:
+                    handle.write(spec.model_dump_json() + "\n")
+            report["plan_file"] = str(plan_file)
+    elif check_only:
+        items: dict[str, SourceItem] = adapter.index(selected_splits)
+        report["check"] = check(config, result, items, Renderer(config, items, noises))
+    else:
+        if result.over_limits() and not allow_over_limits:
+            raise LimitsExceeded(result.report["limits"]["exceeded"])
+        items = adapter.index(selected_splits)
+        report["build"] = build(
+            config,
+            result,
+            items,
+            noises,
+            workers,
+            overwrite,
+            adapter.field_types,
+            progress=progress,
+        )
+    report["seconds"] = round(time.monotonic() - started, 1)
+    return report
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """The command line: `run()` plus a printed summary, a JSON report and exit codes."""
+    load_dotenv()  # PROJECT_ROOT and the other paths of this repository's .env
+    args: argparse.Namespace = parse_args(argv)
+    report: dict[str, Any] = {"config": str(args.config)}
+
+    def on_plan(planned: dict[str, Any]) -> None:
+        report.update(planned)
+        print_summary(report)
+
     try:
         config: Config = load_config(args.config)
-        report["config_hash"] = config.config_hash
-        names: list[str] = [s.name for s in config.scenarios]
-        if args.scenario and (unknown := set(args.scenario) - set(names)):
-            raise ConfigError(f"unknown scenarios {sorted(unknown)}; config has {names}")
-        splits: list[str] = [s for s in SPLITS if s in config.dataset.splits]
-        if args.split:
-            splits = [s for s in splits if s in args.split]
-        adapter: CorpusAdapter = make_adapter(config.dataset)
-        noises: dict[str, NoiseSource] = make_noises(config, adapter)
-        planner = Planner(config, adapter, noises)
-        result: PlanResult = planner.plan(splits, args.scenario, args.limit)
+        report.update(
+            run(
+                config,
+                scenarios=args.scenario,
+                splits=args.split,
+                limit=args.limit,
+                workers=args.workers,
+                overwrite=args.overwrite,
+                dry_run=args.dry_run,
+                check_only=args.check,
+                allow_over_limits=args.allow_over_limits,
+                plan_file=args.report.parent / "plan.jsonl" if args.report else None,
+                on_plan=on_plan,
+            )
+        )
     except ConfigError as exc:
         print(f"Config error: {exc}", file=sys.stderr)
         return EXIT_CONFIG
     except ContractError as exc:
         print(f"Input contract violated: {exc}", file=sys.stderr)
+        write_report(args.report, report)
         return EXIT_CONTRACT
-
-    report["plan"] = result.report
-    report["splits"] = splits
-    print_summary(report)
-
-    if args.dry_run:
-        if args.report is not None:
-            plan_path: Path = args.report.parent / "plan.jsonl"
-            plan_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(plan_path, "w", encoding="utf-8") as handle:
-                for spec in result.specs:
-                    handle.write(spec.model_dump_json() + "\n")
-            report["plan_file"] = str(plan_path)
-        report["seconds"] = round(time.monotonic() - started, 1)
-        write_report(args.report, report)
-        return EXIT_LIMITS if result.over_limits() else EXIT_OK
-
-    items: dict[str, SourceItem] = adapter.index(splits)
-    if args.check:
-        report["check"] = check(config, result, items, Renderer(config, items, noises))
-        report["seconds"] = round(time.monotonic() - started, 1)
-        write_report(args.report, report)
-        print(f"Checked {report['check']['checked']}, problems: {report['check']['problems']}")
-        return EXIT_FAILED if report["check"]["problems"] else EXIT_OK
-
-    if result.over_limits() and not args.allow_over_limits:
+    except LimitsExceeded:
         print("Limits exceeded; nothing was written (use --allow-over-limits).", file=sys.stderr)
         write_report(args.report, report)
         return EXIT_LIMITS
-
-    try:
-        report["build"] = build(
-            config, result, items, noises, args.workers, args.overwrite, adapter.field_types
-        )
-    except ContractError as exc:
-        print(f"Input contract violated: {exc}", file=sys.stderr)
-        write_report(args.report, report)
-        return EXIT_CONTRACT
-    report["seconds"] = round(time.monotonic() - started, 1)
     write_report(args.report, report)
+
+    if args.dry_run:
+        return EXIT_LIMITS if report["plan"]["limits"]["exceeded"] else EXIT_OK
+    if args.check:
+        print(f"Checked {report['check']['checked']}, problems: {report['check']['problems']}")
+        return EXIT_FAILED if report["check"]["problems"] else EXIT_OK
     built: dict[str, Any] = report["build"]
     print(
         f"Written {built['written']}, already done {built['already_done']},"

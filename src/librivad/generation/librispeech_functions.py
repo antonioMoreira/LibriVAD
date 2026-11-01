@@ -169,7 +169,7 @@ def remove_silence(
             # Find the dataset name (e.g., 'LibriSpeech') and replace it with 'Labels'
             idx: int = parts.index(wav_p.parts[-5])  # e.g., 'train-clean-100'
             parts[idx - 1] = "Labels"
-        except ValueError, IndexError:
+        except (ValueError, IndexError):
             # Fallback for unexpected path structures
             parts[-6] = "Labels"
 

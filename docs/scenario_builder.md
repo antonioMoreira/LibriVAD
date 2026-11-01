@@ -39,6 +39,39 @@ uv run python -m librivad.generation.build_scenarios --config <config.yaml> --re
 | 3 | `output.limits` exceeded (dry run, or a build without `--allow-over-limits`) |
 | 4 | The input corpus breaks its contract (schema version, sample rate, missing or invalid rows) |
 
+## Using it from another project
+
+The builder is importable on Python 3.12 or newer. The core dependencies cover it; the
+`paper` extra (creation scripts, `validate.py`, `setup.py`) and the `vad` extra (the models)
+are not needed. skylar-dataset depends on this checkout as an editable path:
+
+```toml
+[dependency-groups]
+noisy = ["librivad"]
+
+[tool.uv.sources]
+librivad = { path = "../LibriVAD", editable = true }
+```
+
+```python
+from librivad.generation import ConfigError, ContractError, LimitsExceeded, config_from_dict, run
+
+config = config_from_dict(raw, base=Path("/base/for/relative/paths"))  # or load_config(path)
+report = run(config, splits=["val"], workers=8, progress=False)
+report["build"]["written"], report["build"]["failed"]
+```
+
+`run()` takes the same options as the flags (`scenarios`, `splits`, `limit`, `workers`,
+`overwrite`, `dry_run`, `check_only`, `allow_over_limits`, `plan_file`) and returns the
+report the CLI writes with `--report`. Instead of exit codes it raises `ConfigError` (2),
+`LimitsExceeded` (3, before anything is written) or `ContractError` (4). Failed renders
+are counted in `report["build"]`, not raised. `on_plan` is called with the report once the
+plan is ready, before rendering. `report["librivad"]` holds the package version, plus the
+commit and dirty flag when the code runs from a checkout.
+
+Importing has no side effects. Only the CLI reads this repository's `.env`, so relative
+paths in a config resolve against `base`, else `PROJECT_ROOT`, else the current folder.
+
 ## Config at a glance
 
 - **`dataset`** describes the corpus. Nothing corpus-specific is in code.

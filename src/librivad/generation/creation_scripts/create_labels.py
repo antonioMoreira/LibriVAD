@@ -183,7 +183,7 @@ def create_label_for_file(wav_path_str: str | Path, alignments_root_dir: str | P
             # We look 5 levels up from the file to find the dataset root.
             idx: int = parts.index(wav_path.parts[-5])
             parts[idx - 1] = "Labels"
-        except ValueError, IndexError:
+        except (ValueError, IndexError):
             # Fallback for unexpected path structures.
             print(f"Warning: Could not determine save path correctly for {wav_path}")
             return

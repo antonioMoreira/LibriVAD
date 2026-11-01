@@ -54,7 +54,7 @@ decided. In detail:
 | G13 | Phase 8 (refactor `create_LibriVAD.py`, `post_mixing`): in this effort or later? | now, or later | Later. skylar doesn't need it. |
 | G14 | Phase 10 issues that predate this work: fix them in this effort? | all; some; separately | Now: `ruff format` and the undeclared `scikit-learn`/`joblib`. Separately: `create_city_noise.py` on 3.14 (`pydub`), the duplicated framing helpers, and the stale VAD docs. |
 | G15 | In `docs/images/librispeechconcat.svg`, rename "Noise (Silence)" to "Silence", and add the subtitle "next utterance (sorted order)" | yes / no | Yes. It was proposed and never confirmed. |
-| G16 | Does LibriVAD stay Python ≥ 3.14 only? | keep; or make it importable on 3.12/3.13 by rewriting the two PEP 758 `except A, B:` lines ([librispeech_functions.py:172](../../src/librivad/generation/librispeech_functions.py#L172), [create_labels.py:186](../../src/librivad/generation/creation_scripts/create_labels.py#L186)) and lowering `requires-python` | Keep, and talk to skylar through the CLI (skylar's N6) |
+| G16 | Does LibriVAD stay Python ≥ 3.14 only? | keep; or make it importable on 3.12/3.13 by rewriting the two PEP 758 `except A, B:` lines ([librispeech_functions.py:172](../../src/librivad/generation/librispeech_functions.py#L172), [create_labels.py:186](../../src/librivad/generation/creation_scripts/create_labels.py#L186)) and lowering `requires-python` | **Decided 2026-10-31: importable.** Your request. Done as listed, plus `Self` annotations, no `.env` on import and a core/extras dependency split; see Plan 2 §7. |
 
 ## 4. Shared with SkylarDataset (decided in skylar's list)
 

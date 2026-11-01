@@ -32,7 +32,7 @@ v1 was written before SkylarDataset was designed. These changes come from the co
 | Timestamps | not handled | `words` (and `segments`, if present) shifted by the speech offset. Whisper-only fields dropped. | Your timestamp-shift example, corrected |
 | Paper scenario name | `paper_middle` | `middle` | Your edit to the YAML |
 | Metadata format | | `metadata.parquet` with a fixed Arrow schema, for the clean input and the noisy output. AudioFolder infers each `metadata.jsonl`'s types separately and refuses to combine a column that is all-null in one file (`dnsmos` in `es`, `locale` in `en`) with the same column typed elsewhere. | Contract change from the skylar side after the first real end-to-end run |
-| Python | | LibriVAD needs 3.14: it uses PEP 758 `except A, B:` syntax at [librispeech_functions.py:172](../../src/librivad/generation/librispeech_functions.py#L172) and [create_labels.py:186](../../src/librivad/generation/creation_scripts/create_labels.py#L186). skylar-dataset must stay below 3.14 while it uses `datasets` 3.6. So the two talk through a **CLI and files** (§7), not imports. | Found while planning |
+| Python | | LibriVAD needs 3.14: it uses PEP 758 `except A, B:` syntax at [librispeech_functions.py:172](../../src/librivad/generation/librispeech_functions.py#L172) and [create_labels.py:186](../../src/librivad/generation/creation_scripts/create_labels.py#L186). skylar-dataset must stay below 3.14 while it uses `datasets` 3.6. So the two talk through a **CLI and files** (§7), not imports. **Superseded 2026-10-31:** the two lines were rewritten, `requires-python` is `>=3.12`, and skylar imports the builder (§7, G16). | Found while planning |
 
 ---
 
@@ -87,7 +87,7 @@ v1's table, plus the items found since.
 | Peak normalization of every output | [`create_LibriVAD.py:279`](../../src/librivad/generation/creation_scripts/create_LibriVAD.py#L279), [`librispeech_functions.scale_signal`](../../src/librivad/generation/librispeech_functions.py#L11) | Changes the absolute level the 0 dB case is defined at |
 | Output path `Results/<dataset>/<split>/<noise>/<snr>/` | [`create_LibriVAD.py:286`](../../src/librivad/generation/creation_scripts/create_LibriVAD.py#L286) | One fixed layout, no metadata |
 | Noise list, SNR list and sample rate hard-coded | [`:329`](../../src/librivad/generation/creation_scripts/create_LibriVAD.py#L329), [`:311`](../../src/librivad/generation/creation_scripts/create_LibriVAD.py#L311), [`:204`](../../src/librivad/generation/creation_scripts/create_LibriVAD.py#L204) | Not configurable |
-| Python 3.14-only syntax | see §0 | skylar-dataset cannot import `librivad` |
+| Python 3.14-only syntax | see §0 | skylar-dataset cannot import `librivad`. Fixed 2026-10-31 (G16). |
 
 Noise recordings available in `files/Noises/`. Each kind has
 `<Kind>_noise_{train,val,test}.wav`, so the noise is already split, at 16 kHz:
@@ -340,7 +340,19 @@ The dry run reports the counts per factor value, per stratum and per folder.
 
 ---
 
-## 7. CLI, the contract with skylar-dataset
+## 7. CLI and library, the contract with skylar-dataset
+
+**Update 2026-10-31 (G16, skylar's N6):** skylar imports the builder instead of running
+this command: `librivad.generation.run()` takes the same options and returns the same
+report, raising `ConfigError`, `LimitsExceeded` and `ContractError` where the CLI exits
+with 2, 3 and 4. What made it possible: the two PEP 758 lines were rewritten, three
+validators annotate `Self` instead of relying on 3.14's deferred annotations,
+`requires-python` is `>=3.12`, importing no longer loads `.env`, and the dependencies were
+split so the builder needs only its core (`paper` and `vad` are extras). The generation
+tests pass on 3.12 and 3.13 with the core alone, and a build through `run()` from skylar's
+3.13 environment is byte-identical to the CLI build. Usage:
+[scenario_builder.md](../scenario_builder.md#using-it-from-another-project). The
+subprocess text below is the original plan.
 
 ```bash
 uv run --project /mnt/HD1TB/LibriVAD python -m librivad.generation.build_scenarios \
