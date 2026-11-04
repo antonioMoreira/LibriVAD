@@ -126,11 +126,11 @@ def test_levels_share_the_excerpt_and_noise_kinds_do_not(skylar_setup: dict[str,
     specs = planner_for(skylar_setup, memory_items(per_stratum=2)).plan(["test"]).specs
     by_group: dict[str, set[int | None]] = {}
     for spec in specs:
-        by_group.setdefault(spec.group, set()).add(spec.noise_block().noise_offset)
+        by_group.setdefault(spec.group, set()).add(spec.noise_offset)
     assert all(len(offsets) == 1 for offsets in by_group.values())
     first = next(s for s in specs if s.scenario == "noise_first")
     last = next(s for s in specs if s.unit == first.unit and s.scenario == "noise_last")
-    assert first.noise_block().noise_offset != last.noise_block().noise_offset
+    assert first.noise_offset != last.noise_offset
 
 
 def test_fill_to_target_skips_at_the_boundary(skylar_setup: dict[str, Any]) -> None:
@@ -230,3 +230,36 @@ def test_quiet_threshold_covers_the_highest_level(skylar_setup: dict[str, Any]) 
     assert planner.min_speech_rms(scenario) == pytest.approx(1.8925 * 10 ** (35 / 20), rel=1e-3)
     scenario.conditions["snr_db"] = [0, 5]
     assert planner.min_speech_rms(scenario) == pytest.approx(32768 * 10 ** (-60 / 20))
+
+
+def test_units_with_the_same_sources_in_different_slots_stay_apart(
+    skylar_setup: dict[str, Any],
+) -> None:
+    """`[a, b]` in one slot and `[a]`, `[b]` in two have the same `unit.id`; a scenario
+    with two speech slots used to get the one-slot unit and fail with an IndexError."""
+    raw: dict[str, Any] = copy.deepcopy(skylar_setup["raw"])
+    raw["population"] = None
+    raw["defaults"]["noise_length"] = {"mode": "ratio", "noise_ratio": 0.2}
+    raw["scenarios"] = [
+        {
+            "name": "joined",
+            "layout": ["noise", "speech"],
+            "speech_block": {"composition": "concatenate", "max_utterances": 2},
+        },
+        {
+            "name": "middle",
+            "layout": ["speech", "noise", "speech"],
+            "speech_block": {"composition": "concatenate", "max_utterances": 1},
+        },
+    ]
+    raw["output"]["path"] = (
+        "{split}/{scenario}/{noise}/snr_{snr_db:02d}/{language}/{first[stem]}.wav"
+    )
+    raw["output"]["metadata_dir"] = "{split}/{scenario}/{noise}/snr_{snr_db:02d}/{language}"
+    specs = planner_for(skylar_setup, memory_items(2), raw).plan(["val"]).specs
+    slots: dict[str, set[int]] = {}
+    for spec in specs:
+        speech = [b for b in spec.blocks if b.kind == "speech"]
+        slots.setdefault(spec.scenario, set()).add(len(speech))
+        assert len(spec.speech_items()) == 2
+    assert slots == {"joined": {1}, "middle": {2}}

@@ -23,15 +23,18 @@ import numpy as np
 from pydantic import BaseModel
 
 from librivad.generation.config import (
+    LEVEL_FACTORS,
     Condition,
     Config,
     ConfigError,
     ScenarioConfig,
     conditions,
+    format_template,
     format_value,
 )
 from librivad.generation.corpus import CorpusAdapter, SourceItem
 from librivad.generation.labels import load_labels
+from librivad.generation.loudness import BLOCK_S, integrated_loudness
 from librivad.generation.noise import NoiseSource, keyed_offset, read_int16_units
 
 WAV_HEADER_BYTES: int = 44
@@ -58,9 +61,6 @@ class BlockSpec(BaseModel):
     start: int
     length: int
     items: list[ItemRef] = []
-    noise: str | None = None
-    noise_file: str | None = None
-    noise_offset: int | None = None
     fade_in: int = 0
     """Samples faded in at the start of the noise block (speech before it)."""
     fade_out: int = 0
@@ -80,17 +80,27 @@ class FileSpec(BaseModel):
     noise_samples: int
     speech_samples: int
     blocks: list[BlockSpec]
+    noise_span: Literal["block", "file"] = "block"
+    """`block`: the excerpt fills the noise block. `file`: it runs under the whole output."""
+    noise: str
+    noise_file: str
+    noise_offset: int
+    """Start of the excerpt in `noise_file`, in samples."""
+    excerpt_samples: int
     out_path: str
     metadata_dir: str | None
     label_path: str | None
     row_id: str
     snr_db: float | None
+    loudness_lu: float | None = None
     fixed_gain: float | None
     selected: bool = True
     """False when `--limit` leaves this output out (it still counts for its group's guard)."""
 
-    def noise_block(self) -> BlockSpec:
-        return next(b for b in self.blocks if b.kind == "noise")
+    def noise_block(self) -> BlockSpec | None:
+        """The layout's noise block: the part of the output without speech. With
+        `noise_span: file` a layout may have none."""
+        return next((b for b in self.blocks if b.kind == "noise"), None)
 
     def speech_items(self) -> list[ItemRef]:
         return [i for b in self.blocks if b.kind == "speech" for i in b.items]
@@ -105,6 +115,12 @@ class Unit:
     @property
     def id(self) -> str:
         return "+".join(item.id for slot in self.slots for item in slot)
+
+    @property
+    def key(self) -> str:
+        """`id` with the slots kept apart: `[a, b]` in one slot and `[a]`, `[b]` in two have
+        the same `id` but are different units."""
+        return "|".join("+".join(item.id for item in slot) for slot in self.slots)
 
     @property
     def first(self) -> SourceItem:
@@ -164,6 +180,7 @@ class Planner:
         self.sr: int = config.dataset.sample_rate
         self._speech_cache: dict[str, int] = {}
         self._power_cache: dict[tuple[str, bool], tuple[float, int]] = {}
+        self._loudness_cache: dict[str, float] = {}
         self.skipped_sources: Counter[str] = Counter()
         self._skipped_outputs: dict[str, Fraction] = defaultdict(Fraction)
         self.warnings: Counter[str] = Counter()
@@ -186,14 +203,27 @@ class Planner:
             self._power_cache[key] = (float(np.sum(audio**2)), len(audio))
         return self._power_cache[key]
 
+    def unit_loudness(self, unit: Unit) -> float:
+        """Integrated loudness (LUFS) of the unit's sources joined back to back."""
+        if unit.id not in self._loudness_cache:
+            audio: np.ndarray = np.concatenate(
+                [read_int16_units(item.path) for slot in unit.slots for item in slot]
+            )
+            self._loudness_cache[unit.id] = integrated_loudness(audio, self.sr)
+        return self._loudness_cache[unit.id]
+
     def min_speech_rms(self, scenario: ScenarioConfig) -> float:
         """Quietest speech-only RMS (int16 units) a source may have in this scenario.
 
         The larger of `loudness.min_speech_rms_dbfs` and the level at which the noise of
-        the scenario's highest `snr_db` would still sit above `NOISE_FLOOR_RMS`.
+        the scenario's highest `snr_db` would still sit above `NOISE_FLOOR_RMS`. For
+        `loudness_lu` that floor is an estimate: loudness and RMS differ by the
+        K-weighting.
         """
         configured: float = FULL_SCALE_RMS * 10 ** (scenario.loudness.min_speech_rms_dbfs / 20)
-        levels: list[float] = [float(v) for v in scenario.conditions.get("snr_db", [])]
+        levels: list[float] = [
+            float(v) for factor in LEVEL_FACTORS for v in scenario.conditions.get(factor, [])
+        ]
         representable: float = NOISE_FLOOR_RMS * 10 ** (max(levels) / 20) if levels else 0.0
         return max(configured, representable)
 
@@ -325,21 +355,21 @@ class Planner:
                 if target not in composed:
                     composed[target] = self.compose(items, scenario, target, split)
                 for unit in composed[target]:
-                    if unit.id not in reasons:
+                    if unit.key not in reasons:
                         reason: str | None = self._skip_reason(unit, scenario)
-                        reasons[unit.id] = reason
+                        reasons[unit.key] = reason
                         if reason is not None:
-                            skipped[unit.id].append((scenario, reason))
-                    if reasons[unit.id] is not None:
+                            skipped[unit.key].append((scenario, reason))
+                    if reasons[unit.key] is not None:
                         continue
-                    units.setdefault(unit.id, unit)
-                    candidates[unit.id].append((scenario, condition))
+                    units.setdefault(unit.key, unit)
+                    candidates[unit.key].append((scenario, condition))
         return units, candidates, skipped
 
     def _skip_reason(self, unit: Unit, scenario: ScenarioConfig) -> str | None:
         speech: int = sum(self._block_length(slot, scenario) for slot in unit.slots)
         length = scenario.noise_length
-        if length.mode == "fill_to_target":
+        if "noise" in scenario.layout and length.mode == "fill_to_target":
             assert length.target_duration_s is not None
             if round(length.target_duration_s * self.sr) - speech < length.min_noise_s * self.sr:
                 return "too_long"
@@ -348,7 +378,12 @@ class Planner:
             labelled: int = sum(self.speech_label_samples(i) for slot in unit.slots for i in slot)
             if labelled < loudness.min_speech_s * self.sr:
                 return "too_little_speech"
-        if loudness.measure == "rms":
+        if loudness.measure == "lufs":
+            if speech < BLOCK_S * self.sr:
+                return "too_short_for_loudness"
+            if self.unit_loudness(unit) < loudness.min_speech_lufs:
+                return "too_quiet"
+        if loudness.measure in ("rms", "lufs"):
             powers: list[tuple[float, int]] = [
                 self.speech_power(i, loudness.speech_only) for slot in unit.slots for i in slot
             ]
@@ -386,8 +421,8 @@ class Planner:
         specs: list[FileSpec] = []
         cursors: dict[str, int] = {}
         group_offsets: dict[str, int] = {}
-        for unit_id, unit in units.items():
-            options: list[tuple[ScenarioConfig, Condition]] = candidates[unit_id]
+        for unit_key, unit in units.items():
+            options: list[tuple[ScenarioConfig, Condition]] = candidates[unit_key]
             if assigned:
                 stratum: tuple[Any, ...] = tuple(unit.first.fields.get(s) for s in strata)
                 if stratum not in orders:
@@ -429,9 +464,12 @@ class Planner:
         speech_lengths: list[int] = [self._block_length(slot, scenario) for slot in unit.slots]
         speech: int = sum(speech_lengths)
         length = scenario.noise_length
-        if length.mode == "fill_to_target":
+        span = scenario.noise_block.span
+        if "noise" not in scenario.layout:
+            noise_len: int = 0
+        elif length.mode == "fill_to_target":
             assert length.target_duration_s is not None
-            noise_len: int = round(length.target_duration_s * sr) - speech
+            noise_len = round(length.target_duration_s * sr) - speech
         else:
             noise_len = noise_length(
                 speech, condition.values.get("noise_ratio", length.noise_ratio)
@@ -439,12 +477,15 @@ class Planner:
 
         noise_name: str = condition.values.get("noise") or scenario.noise_block.source or ""
         source: NoiseSource = self.noises[noise_name]
-        level_free: dict[str, Any] = {k: v for k, v in condition.values.items() if k != "snr_db"}
+        level_free: dict[str, Any] = {
+            k: v for k, v in condition.values.items() if k not in LEVEL_FACTORS
+        }
         group: str = "/".join(
             [split, unit.id, scenario.name, *map(format_value, level_free.values())]
         )
 
-        fade: int = min(round(scenario.noise_block.fade_ms / 1000 * sr), noise_len // 2)
+        fade_ms: float = scenario.noise_block.fade_ms if span == "block" else 0.0
+        fade: int = min(round(fade_ms / 1000 * sr), noise_len // 2)
         blocks: list[BlockSpec] = []
         position: int = 0
         slot_index: int = 0
@@ -468,9 +509,7 @@ class Planner:
                 position += speech_lengths[slot_index]
                 slot_index += 1
             else:
-                blocks.append(
-                    BlockSpec(kind="noise", start=position, length=noise_len, noise=noise_name)
-                )
+                blocks.append(BlockSpec(kind="noise", start=position, length=noise_len))
                 position += noise_len
         for previous, current in pairwise(blocks):
             if previous.kind == "noise":
@@ -478,18 +517,20 @@ class Planner:
             if current.kind == "noise":
                 current.fade_in = fade
 
-        noise_block: BlockSpec = next(b for b in blocks if b.kind == "noise")
-        noise_block.noise_file = str(source.file(split))
-        noise_block.noise_offset = self._noise_offset(
-            split, unit, scenario, condition, source, noise_len, group, cursors, group_offsets
+        excerpt: int = position if span == "file" else noise_len
+        offset: int = self._noise_offset(
+            split, unit, scenario, condition, source, excerpt, group, cursors, group_offsets
         )
 
         context: dict[str, Any] = self._template_context(split, unit, scenario, condition)
         output = self.config.output
         try:
-            out_path: str = (scenario.output_path or output.path).format(**context)
+            out_path: str = format_template(scenario.output_path or output.path, context)
+            metadata_template: str | None = scenario.metadata_dir or output.metadata_dir
             metadata_dir: str | None = (
-                output.metadata_dir.format(**context) if output.metadata_dir is not None else None
+                format_template(metadata_template, context)
+                if metadata_template is not None
+                else None
             )
         except (KeyError, ValueError, IndexError) as exc:
             raise ConfigError(f"cannot fill output templates for {unit.id}: {exc!r}") from exc
@@ -503,6 +544,7 @@ class Planner:
             [unit.id, scenario.name, *(format_value(v) for v in condition.values.values())]
         )
         snr: Any = condition.values.get("snr_db")
+        lu: Any = condition.values.get("loudness_lu")
         return FileSpec(
             split=split,
             split_folder=self.config.dataset.splits[split],
@@ -514,11 +556,17 @@ class Planner:
             noise_samples=noise_len,
             speech_samples=speech,
             blocks=blocks,
+            noise_span=span,
+            noise=noise_name,
+            noise_file=str(source.file(split)),
+            noise_offset=offset,
+            excerpt_samples=excerpt,
             out_path=out_path,
             metadata_dir=metadata_dir,
             label_path=label_path,
             row_id=row_id,
             snr_db=float(snr) if snr is not None else None,
+            loudness_lu=float(lu) if lu is not None else None,
             fixed_gain=scenario.loudness.gain
             if scenario.loudness.measure == "fixed_gain"
             else None,

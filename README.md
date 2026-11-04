@@ -54,3 +54,40 @@ This repository contains the scripts necessary to generate the LibriVAD dataset,
 
 > [!WARNING]
 > The initial space requirement for the setup process (before generating the final dataset) is approximately **61GB**. Please ensure you have sufficient disk space.
+
+# LibriVAD Pipeline Augmentation
+
+LibriVAD scenarios should cover these scenarios:
+
+1. Variation of loudness (LUFS) related to the original audio `sample.wav`
+2. Variation of the global noise into the output (SNR)
+3. Organization scenarios:
+    3.1 `noise_last`
+    3.2 `noise_first`
+    3.3 `noise_middle`
+
+(!) Important: everything is configured trough YAML configuration file.
+
+Following ASCII flow schema exemplifies one possible scenario:
+
+```
+                          ─┐                                 
+       ┌──────────────────┐│                                 
+       │ x s   sample.wav ││                                 
+       └──────────────────┘├────┐                            
+┌─────────────────────────┐│    │                            
+│30 s    office_noise.wav ││    │                            
+└─────────────────────────┘│    │                            
+                          ─┘    ▼                            
+          ┌────────────────────────────────────────────────┐ 
+          │┌────────────────────────────┐┌────────────────┐│ 
+          ││ sample.wav+office_noise.wav││office_noise.wav││ 
+          │└────────────────────────────┘└────────────────┘│ 
+         │└────────────────────────────────────────────────┘│
+         └───────────────────┬───┬───┬──────────────────────┘
+                             ▼   ▼   ▼                       
+                - 30s                                        
+                - noise_last scenario                        
+                - -20 LUFS relating to the sample.wav        
+                - -5 SNR                                     
+```

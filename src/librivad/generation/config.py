@@ -5,7 +5,7 @@ A config describes one corpus (`dataset`), the noise recordings (`noise_sources`
 and how outputs are written (`output`), and a list of `scenarios`. Each scenario is
 deep-merged over `defaults` (dicts merge key by key, lists and scalars are replaced), and
 the top-level `conditions` are merged the same way. The format is documented in
-docs/scenario_builder.md and docs/plans/02-librivad-generalization.md §5.
+docs/scenario_builder.md.
 """
 
 import hashlib
@@ -20,8 +20,12 @@ from typing import Any, Literal, Self
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-FACTOR_KEYS: tuple[str, ...] = ("noise", "noise_ratio", "snr_db")
+FACTOR_KEYS: tuple[str, ...] = ("noise", "noise_ratio", "snr_db", "loudness_lu")
 """Condition keys a scenario can sweep. `scenario` is always a factor as well."""
+
+LEVEL_FACTORS: tuple[str, ...] = ("snr_db", "loudness_lu")
+"""The condition keys that set the noise level. Outputs that differ only by them form one
+group (same sources, same excerpt, same clip guard)."""
 
 SPLITS: tuple[str, ...] = ("train", "val", "test")
 
@@ -137,6 +141,14 @@ class SpeechBlockConfig(_Model):
     """`single` with a speech target: keep items within this fraction of the target."""
     join_gap_s: float = 0.0
     join_fade_ms: float = 0.0
+    edge_fade_ms: float | None = None
+    """Fade in and out at the edges of each speech block. Default: 10 ms with
+    `noise_block.span: file` (the speech is added over the noise), 0 otherwise."""
+
+    def edge_fade(self, span: str) -> float:
+        if self.edge_fade_ms is not None:
+            return self.edge_fade_ms
+        return 10.0 if span == "file" else 0.0
 
 
 class NoiseLengthConfig(_Model):
@@ -149,24 +161,35 @@ class NoiseLengthConfig(_Model):
 class NoiseBlockConfig(_Model):
     source: str | None = None
     """Noise source when `conditions` has no `noise` factor."""
+    span: Literal["block", "file"] = "block"
+    """`block`: the noise fills the layout's noise block only. `file`: one excerpt runs
+    under the whole output at one gain and the speech is added on top; the layout's noise
+    block is then the part without speech, and the layout may have none (`[speech]`)."""
     slicing: Literal["random_offset", "sequential_wrap"] = "random_offset"
     key: list[str] = ["id", "scenario", "noise"]
     """Values hashed to choose a random offset. Leave the level out to reuse the excerpt."""
     fade_ms: float = 10.0
+    """`span: block` only: fade of the noise block at its edges next to speech."""
 
 
 class LoudnessConfig(_Model):
-    measure: Literal["rms", "fixed_gain"] = "rms"
+    measure: Literal["rms", "lufs", "fixed_gain"] = "rms"
+    """`rms` sets the noise by `snr_db`, `lufs` by `loudness_lu` (ITU-R BS.1770 integrated
+    loudness of the speech block minus that of the noise), `fixed_gain` by `gain`."""
     speech_only: bool = True
     min_speech_s: float = 0.5
     min_speech_rms_dbfs: float = -60.0
     """Sources whose speech-only RMS is quieter are skipped (`too_quiet`). The planner also
-    raises it to the level where the highest `snr_db` still fits in int16 precision."""
+    raises it to the level where the highest `snr_db` or `loudness_lu` still fits in int16
+    precision."""
+    min_speech_lufs: float = -70.0
+    """`lufs`: sources whose gated loudness is quieter are skipped (`too_quiet`)."""
     gain: float | None = None
 
 
 class ConstraintsConfig(_Model):
     min_snr_db: float | None = None
+    min_loudness_lu: float | None = None
 
 
 class ScenarioConfig(_Model):
@@ -180,6 +203,8 @@ class ScenarioConfig(_Model):
     conditions: dict[str, list[Any]] = {}
     output_path: str | None = None
     """Replaces `output.path` for this scenario (its conditions may differ from the others)."""
+    metadata_dir: str | None = None
+    """Replaces `output.metadata_dir` for this scenario, e.g. when its level factor differs."""
 
     @property
     def n_speech(self) -> int:
@@ -243,12 +268,35 @@ class Condition(BaseModel):
 
 
 def format_value(value: Any) -> str:
-    """Folder-friendly text of a condition value: ints zero-padded to two digits."""
+    """Folder-friendly text of a condition value: ints zero-padded to two digits, the sign
+    outside the padding (`-05`, `05`)."""
     if isinstance(value, bool):
         return str(value).lower()
     if isinstance(value, int):
-        return f"{value:02d}"
+        return f"-{-value:02d}" if value < 0 else f"{value:02d}"
     return str(value)
+
+
+class _TemplateFormatter(Formatter):
+    """`str.format` where a zero-padded width does not count the minus sign, so
+    `{snr_db:02d}` gives `-05` and `05`, like `format_value`."""
+
+    def format_field(self, value: Any, format_spec: str) -> str:
+        if (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and value < 0
+            and format_spec[:1] == "0"
+            and format_spec[1:-1].isdigit()
+            and format_spec.endswith("d")
+        ):
+            return "-" + format(-value, format_spec)
+        return super().format_field(value, format_spec)
+
+
+def format_template(template: str, context: dict[str, Any]) -> str:
+    """Fill an output path template (see `_TemplateFormatter`)."""
+    return _TemplateFormatter().vformat(template, (), context)
 
 
 def conditions(scenario: ScenarioConfig) -> Iterator[Condition]:
@@ -405,8 +453,12 @@ def check_config(config: Config) -> None:
 def _check_scenario(config: Config, scenario: ScenarioConfig) -> list[str]:
     errors: list[str] = []
     layout: list[str] = list(scenario.layout)
-    if layout.count("noise") != 1:
-        errors.append("layout needs exactly one `noise`")
+    has_noise_block: bool = "noise" in layout
+    if scenario.noise_block.span == "file":
+        if layout.count("noise") > 1:
+            errors.append("layout needs at most one `noise`")
+    elif layout.count("noise") != 1:
+        errors.append("layout needs exactly one `noise` (or noise_block.span file)")
     if scenario.n_speech not in (1, 2):
         errors.append("layout needs `speech` once or twice")
 
@@ -424,7 +476,10 @@ def _check_scenario(config: Config, scenario: ScenarioConfig) -> list[str]:
 
     length: NoiseLengthConfig = scenario.noise_length
     ratios: list[Any] = scenario.conditions.get("noise_ratio") or []
-    if length.mode == "ratio":
+    if not has_noise_block:
+        if ratios:
+            errors.append("noise_ratio conditions need a `noise` in the layout")
+    elif length.mode == "ratio":
         if length.noise_ratio is not None and ratios:
             errors.append("give noise_ratio in noise_length or in conditions, not both")
         if length.noise_ratio is None and not ratios:
@@ -439,23 +494,32 @@ def _check_scenario(config: Config, scenario: ScenarioConfig) -> list[str]:
         if target is None or not target > length.min_noise_s >= 0:
             errors.append("fill_to_target needs target_duration_s > min_noise_s >= 0")
 
-    snrs: list[Any] = scenario.conditions.get("snr_db") or []
     loudness: LoudnessConfig = scenario.loudness
-    if loudness.measure == "fixed_gain":
-        if snrs:
-            errors.append("loudness.measure fixed_gain excludes snr_db")
-        if loudness.gain is None:
-            errors.append("loudness.measure fixed_gain needs loudness.gain")
-    elif not snrs:
-        errors.append("loudness.measure rms needs conditions.snr_db")
-    for snr in snrs:
-        if not isinstance(snr, int | float) or isinstance(snr, bool):
-            errors.append(f"snr_db {snr!r} must be a number")
-        elif scenario.constraints.min_snr_db is not None and snr < scenario.constraints.min_snr_db:
+    wanted: dict[str, str] = {"rms": "snr_db", "lufs": "loudness_lu"}
+    for measure, factor in wanted.items():
+        if scenario.conditions.get(factor) and loudness.measure != measure:
             errors.append(
-                f"snr_db {snr} is below constraints.min_snr_db {scenario.constraints.min_snr_db}"
-                " (the noise would be louder than allowed)"
+                f"loudness.measure {loudness.measure} excludes {factor} (needs {measure})"
             )
+    if loudness.measure == "fixed_gain" and loudness.gain is None:
+        errors.append("loudness.measure fixed_gain needs loudness.gain")
+    elif loudness.measure in wanted and not scenario.conditions.get(wanted[loudness.measure]):
+        errors.append(
+            f"loudness.measure {loudness.measure} needs conditions.{wanted[loudness.measure]}"
+        )
+    minimums: dict[str, tuple[str, float | None]] = {
+        "snr_db": ("min_snr_db", scenario.constraints.min_snr_db),
+        "loudness_lu": ("min_loudness_lu", scenario.constraints.min_loudness_lu),
+    }
+    for factor, (name, minimum) in minimums.items():
+        for level in scenario.conditions.get(factor) or []:
+            if not isinstance(level, int | float) or isinstance(level, bool):
+                errors.append(f"{factor} {level!r} must be a number")
+            elif minimum is not None and level < minimum:
+                errors.append(
+                    f"{factor} {level} is below constraints.{name} {minimum}"
+                    " (the noise would be louder than allowed)"
+                )
 
     noises: list[Any] = scenario.conditions.get("noise") or []
     if noises and scenario.noise_block.source is not None:
@@ -516,13 +580,14 @@ def _check_templates(config: Config, fields: set[str]) -> list[str]:
         where: str = f"scenario {scenario.name}:"
         if unknown := template_fields(path) - allowed:
             errors.append(f"{where} output path uses unknown placeholders {sorted(unknown)}")
-        if output.metadata_dir is None:
+        metadata_dir: str | None = scenario.metadata_dir or output.metadata_dir
+        if metadata_dir is None:
             continue
-        if unknown := template_fields(output.metadata_dir) - allowed:
+        if unknown := template_fields(metadata_dir) - allowed:
             errors.append(
                 f"{where} output.metadata_dir uses unknown placeholders {sorted(unknown)}"
             )
-        if not path.startswith(output.metadata_dir.rstrip("/") + "/"):
+        if not path.startswith(metadata_dir.rstrip("/") + "/"):
             errors.append(f"{where} output.metadata_dir must be a parent folder of the output path")
     labels_path: str | None = config.dataset.labels.path
     if labels_path is not None and (unknown := template_fields(labels_path) - fields):

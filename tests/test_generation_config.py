@@ -25,10 +25,11 @@ def test_example_configs_load() -> None:
         assert config.scenarios
 
 
-def test_skylar_grid_has_144_conditions() -> None:
+def test_skylar_grid_has_216_conditions() -> None:
+    """4 scenarios (2 layouts x SNR or loudness) x 9 noises x 6 levels."""
     config = load_config(REPO / "configs/scenarios/skylar_noisy.example.yaml", base=REPO)
-    assert sum(len(list(conditions(s))) for s in config.scenarios) == 144
-    assert config.factors() == ["scenario", "noise", "snr_db"]
+    assert sum(len(list(conditions(s))) for s in config.scenarios) == 216
+    assert config.factors() == ["scenario", "noise", "snr_db", "loudness_lu"]
 
 
 def test_scenarios_are_deep_merged_over_defaults(skylar_setup: dict[str, Any]) -> None:

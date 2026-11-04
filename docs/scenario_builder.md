@@ -1,17 +1,19 @@
 # Scenario builder
 
-`librivad.generation.build_scenarios` builds datasets where a speech block and a noise
-block are placed next to each other, at a chosen level and length. The whole build is
-described in one YAML file (version 2). Examples:
+`librivad.generation.build_scenarios` builds datasets where speech and noise are placed
+in one file at a chosen level and length: the noise either fills a block next to the
+speech, or runs under the whole file with the speech added on top (`noise_block.span:
+file`). The level is set by SNR or by loudness. The whole build is described in one YAML
+file (version 2). Examples:
 
 | Config | What it builds |
 | :--- | :--- |
 | [`configs/scenarios/librispeech_middle.yaml`](../configs/scenarios/librispeech_middle.yaml) | The paper's LibriSpeechConcat (`speech + silence + speech`). [`create_LibriSpeechConcat.py`](../src/librivad/generation/creation_scripts/create_LibriSpeechConcat.py) runs it. |
-| [`configs/scenarios/skylar_noisy.example.yaml`](../configs/scenarios/skylar_noisy.example.yaml) | SkylarDataset's `noisy` subset from its `clean` subset: 30 s files, noise first or last, 9 noise kinds, 0–35 dB below the speech. |
+| [`configs/scenarios/skylar_noisy.example.yaml`](../configs/scenarios/skylar_noisy.example.yaml) | SkylarDataset's `noisy` subset from its `clean` subset: 30 s files with the noise under the whole file, speech first or last, 9 noise kinds, levels by SNR and by loudness. |
 | [`docs/concat_scenarios.example.yaml`](concat_scenarios.example.yaml) | Commented reference of every option, on LibriSpeech. |
 
-The design and the reasons behind it are in
-[plans/02-librivad-generalization.md](plans/02-librivad-generalization.md).
+Noise under the whole file and loudness levels are described in
+[plans/05-noise-over-speech.md](plans/05-noise-over-speech.md).
 
 ## Running it
 
@@ -83,13 +85,18 @@ paths in a config resolve against `base`, else `PROJECT_ROOT`, else the current 
   - `extracted_from_dataset` is the label-0 regions of a split, cached to a WAV.
 - **`output`** gives where and how files are written:
   - `path`: a template of each output's path.
-  - `metadata_dir`: a template of the folder that gets `metadata.parquet`, or none. Every output metadata file has one explicit Arrow schema: carried-over columns keep their input types, `snr_db` is int64, other numbers float64, so a column that is null in a whole folder still has its type.
+  - `metadata_dir`: a template of the folder that gets `metadata.parquet`, or none. A scenario can replace it (`scenarios[].metadata_dir`), as it can `path` (`output_path`), e.g. when its level factor differs. Every output metadata file has one explicit Arrow schema: carried-over columns keep their input types, `snr_db` and `loudness_lu` are int64, other numbers float64, so a column that is null in a whole folder still has its type.
+  - In templates, a zero-padded negative integer keeps its width after the sign: `{snr_db:02d}` gives `-05`.
   - `normalization`, `clip_guard` and `limits`.
-- **`scenarios`** each give a `layout` (`[noise, speech]`, `[speech, noise]`, `[speech, noise, speech]`). Each is deep-merged over `defaults`; `conditions` lists the values it sweeps (`noise`, `noise_ratio`, `snr_db`).
+- **`scenarios`** each give a `layout` (`[noise, speech]`, `[speech, noise]`, `[speech, noise, speech]`, or `[speech]` with `span: file`). Each is deep-merged over `defaults`; `conditions` lists the values it sweeps (`noise`, `noise_ratio`, `snr_db`, `loudness_lu`).
+  - `noise_block.span`: `block` (default) puts the excerpt in the layout's noise block; `file` runs one excerpt at one gain under the whole output and adds the speech on top, so the noise block is just the part without speech.
+  - `speech_block.edge_fade_ms`: a fade in and out at each speech block's edges; 10 ms by default with `span: file`, 0 otherwise.
+  - `loudness.measure`: `rms` with `snr_db`, `lufs` with `loudness_lu`, or `fixed_gain`.
 - **`population`** (optional) sets, per split, which factors are **crossed** (every value per source file) and which are **assigned** (one value per file, balanced inside each stratum). Without it, every file gets every condition.
 
 `load_config` rejects invalid configs with every problem listed, for example:
-- a noise louder than `constraints.min_snr_db` allows;
+- a noise louder than `constraints.min_snr_db` (or `min_loudness_lu`) allows;
+- a level factor that doesn't match `loudness.measure`;
 - a placeholder that is not a field;
 - a factor missing from `population`.
 
@@ -98,27 +105,38 @@ paths in a config resolve against `base`, else `PROJECT_ROOT`, else the current 
 | Rule | Detail |
 | :--- | :--- |
 | Noise length | `mode: ratio`: `floor(S·p/(1−p))`, exact (`Fraction`). `mode: fill_to_target`: `T·sr − S`; files leaving less than `min_noise_s` are skipped as `too_long`. |
-| Quiet sources | A source whose speech-only RMS is below `loudness.min_speech_rms_dbfs` (default −60 dBFS) is skipped as `too_quiet` by the planner, never rendered. The planner raises that floor to the level where the scenario's highest `snr_db` still leaves the noise at ≥ 1.89 LSB, below which int16 rounding moves the measured level by more than 0.1 dB (35 dB → −49.8 dBFS). |
-| Level | `gain = speech RMS · 10^(−snr_db/20) / noise RMS`. The speech RMS is over speech-only samples when `speech_only` is set; the noise RMS is over the block without its fades. `fixed_gain` multiplies instead (the paper's 0.001). |
-| Excerpt | `random_offset` is seeded by a hash of `noise_block.key` (default `[id, scenario, noise]`). Every level of a file gets the same excerpt, and the offset never depends on file order. `sequential_wrap` walks a cursor through the file, as the paper did. |
-| Fades | A raised-cosine fade of `fade_ms` on the noise block, only at its edges next to speech. The speech samples are copied unchanged. |
+| Quiet sources | A source whose speech-only RMS is below `loudness.min_speech_rms_dbfs` (default −60 dBFS) is skipped as `too_quiet` by the planner, never rendered. The planner raises that floor to the level where the scenario's highest `snr_db` (or `loudness_lu`, as an estimate) still leaves the noise at ≥ 1.89 LSB, below which int16 rounding moves the measured level by more than 0.1 dB (35 dB → −49.8 dBFS). With `lufs`, speech shorter than one 400 ms block is skipped as `too_short_for_loudness`, and speech below `min_speech_lufs` (−70) as `too_quiet`. |
+| Level | `rms`: `gain = speech RMS · 10^(−snr_db/20) / noise RMS`. The speech RMS is over speech-only samples when `speech_only` is set. `lufs`: `gain = 10^((L_speech − loudness_lu − L_noise)/20)`, with `L` the integrated loudness (ITU-R BS.1770-4, `generation/loudness.py`) of the speech blocks and of the noise; gating skips the pauses. The noise is measured over the block without its fades (`span: block`) or the whole excerpt (`span: file`). `fixed_gain` multiplies instead (the paper's 0.001). Every output records both `measured_snr_db` and `measured_loudness_lu`, whichever set the gain. |
+| Excerpt | `random_offset` is seeded by a hash of `noise_block.key` (default `[id, scenario, noise]`). Every level of a file gets the same excerpt, and the offset never depends on file order. `sequential_wrap` walks a cursor through the file, as the paper did. With `span: file` the excerpt is as long as the output. |
+| Fades | `span: block`: a raised-cosine fade of `fade_ms` on the noise block, only at its edges next to speech; the speech samples are copied unchanged. `span: file`: the noise has no fades; each speech block is faded in and out over `edge_fade_ms`, so its own room tone doesn't switch on abruptly over the noise. |
 | Clipping | `normalization: none` scales a whole file down only when rounding to int16 would actually clip (a sample above 32767 or below −32768), to exactly full scale, and records `clip_gain_db`. Sources that already peak at full scale are left alone. `per_group` uses one gain for every level of a file, so a file whose 0 dB version clips is scaled at every level (the report lists both `clip_guard_by_level`, applied, and `clip_guard_triggered_by_level`, where the file itself would have clipped). `normalization: peak` reproduces `librispeech_functions.scale_signal`, truncation included. |
-| Labels and timestamps | 0 over the noise block, the source labels over the speech. `words` and `segments` are shifted by where the speech starts, and `output.drop_fields` (e.g. Whisper's `tokens`, `seek`) are removed. |
+| Labels and timestamps | 0 outside the speech blocks, the source labels over them (with `span: file` too: noise under the speech doesn't change the labels). `words` and `segments` are shifted by where the speech starts, and `output.drop_fields` (e.g. Whisper's `tokens`, `seek`) are removed. |
 | Resume | Files are written as `*.tmp` and renamed. Parquet cannot be appended to, so each folder's rows are kept in memory and its `metadata.parquet` is rewritten (atomically) when its last output is written, every 500 rows, and at the end; a wav written after the last checkpoint has no row yet if the run is killed. A rerun first cleans up: `.tmp` files are deleted, planned wavs without a row are moved to `.orphans/<time>/`, and rows without a wav are dropped. It then renders only what is missing. Metadata rows are sorted by `file_name`. |
 
 The metadata row of a skylar output holds:
-- `file_name`, `id`, `clean_id`, the condition (`scenario`, `noise`, `snr_db`);
-- `duration`, `source_duration`, `speech_start`/`end` and `noise_start`/`end`;
-- `noise_ratio`, `noise_file`, `noise_offset_s`, `noise_gain_db`, `clip_gain_db` and `measured_snr_db`;
+- `file_name`, `id`, `clean_id`, the condition (`scenario`, `noise`, `snr_db` or `loudness_lu`; the factor a scenario doesn't sweep is null);
+- `duration`, `source_duration`, `speech_start`/`end` and `noise_start`/`end` (with `span: file`, 0 and the duration);
+- `noise_ratio` (the share of the file without speech), `noise_file`, `noise_offset_s`, `noise_gain_db`, `clip_gain_db`, `measured_snr_db` and `measured_loudness_lu`;
 - the passthrough fields of the clean row;
 - the shifted `words`.
+
+Positions (`speech_start`, `speech_end`, `noise_start`, `noise_end`, `noise_offset_s`) are
+written to 7 decimals, so `round(seconds · sr)` gives back the exact sample. Gains are
+written to 0.001 dB.
 
 ## Tests
 
 ```bash
-uv run pytest                 # 69 builder tests plus the existing ones
-uv run pytest -m slow         # paper parity: renders dev-clean and test-clean (about 3 min)
+uv run pytest                 # builder tests plus the existing ones
+uv run pytest -m slow         # paper parity: LibriSpeechConcat (about 3 min) and LibriVAD's mixing
 ```
+
+**Parity with the paper's noisy LibriVAD (`create_LibriVAD.py`).** Layout `[speech]` with
+`span: file`, `sequential_wrap`, `normalization: peak` and `edge_fade_ms: 0` is the script's
+arithmetic: 16 dev-clean outputs at −5 and 20 dB, recomputed with the script's own
+`remove_silence`, `RMS` and `scale_signal` from the same excerpt, are **bit-identical**. The
+script's excerpts themselves can't be reproduced: it restarts its noise cursor every batch
+and walks files in unsorted `glob` order.
 
 **Parity with the paper's LibriSpeechConcat.** Checked on 2,661 dev-clean and test-clean pairs:
 - **Audio:** every file has the same name and length and is **bit-identical**.

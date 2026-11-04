@@ -1,7 +1,8 @@
 # Plan 5 — Noise over the whole file, levelled by SNR or by loudness
 
-Status: agreed 2026-11-03, not started. The skylar side is
-`skylar-dataset/docs/plans/05-noisy-noise-over-speech.md`.
+Status: implemented 2026-11-04, uncommitted, pending review. The skylar side is
+`skylar-dataset/docs/plans/05-noisy-noise-over-speech.md`. See "Implementation notes" at
+the end for what differs from the plan.
 
 ## Goal
 
@@ -166,3 +167,22 @@ Fix the planner if it doesn't.
   (rejected: a cue at the join).
 - Loudness measured over the speech only. Gating already skips the pauses.
 - Mixing on the fly in a DataLoader.
+
+## Implementation notes (2026-11-04)
+
+| Item | Plan | Done | Why |
+|---|---|---|---|
+| Loudness meter | No new core dependency | **scipy moved from the `paper` and `vad` extras into the core** | The K-weighting is an IIR filter; a numpy loop is far too slow for tens of thousands of files. `scipy.signal.lfilter` does it. Within 0.1 LU of `pyloudnorm` on noise, speech and a tone. |
+| P5-1 `edge_fade_ms` | 10 ms with `span: file` | As recommended (`None` means 10 ms with `span: file`, 0 otherwise) | |
+| P5-2 factor name | `loudness_lu` | As recommended | |
+| Per-scenario folders | Not planned | **`scenarios[].metadata_dir`** replaces `output.metadata_dir`, like `output_path` | A `snr_{snr_db}` folder template can't be filled in a loudness scenario. |
+| Excerpt | On the noise block | **On `FileSpec`** (`noise`, `noise_file`, `noise_offset`, `excerpt_samples`, `noise_span`); `noise_block()` may return None | A `[speech]` layout has no noise block. `plan.jsonl` changes accordingly. |
+| Metadata positions | Not planned | `speech_start`, `speech_end`, `noise_start`, `noise_end`, `noise_offset_s` written to **7 decimals** (were 4) | 4 decimals is 0.1 ms, 1.6 samples: a validator could not find the exact excerpt or speech start. `duration` stays at 4, like the clean subset's. |
+| Population with two level factors | Check, fix if needed | Works as is: a factor a scenario lacks is None, so each scenario crosses only its own levels. Tested. | |
+| `--check` with `span: file` | Not planned | Rebuilds the speech from the sources and the row's clip gain to measure the level | The noise and speech overlap, so the level can't be read from the audio alone. Needs the metadata row and `normalization: none`. |
+| Paper parity, stage 2 | Bit-identical if possible | **Bit-identical** (0 LSB) on 16 dev-clean outputs at −5 and 20 dB, per file from the same excerpt | The script's excerpts can't be planned the same way: it restarts its cursor every batch and walks files in `glob` order. `tests/test_generation_paper_mixing.py` (slow). |
+| Old planner bug | — | **Fixed**: units are keyed by their slots (`Unit.key`) | `docs/concat_scenarios.example.yaml` crashed the planner before this plan: a contiguous `[a, b]` and the `middle` pair `[a]`, `[b]` had the same `unit.id`. Regression test added. |
+
+Verification: `uv run pytest` 105 passed; `uv run pytest -m slow` both parity tests pass
+(LibriSpeechConcat bit-identical as before; noisy LibriVAD arithmetic bit-identical).
+`ruff` and `ty` clean. The example config plans 27,827 val outputs without errors.

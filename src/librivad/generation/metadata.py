@@ -10,13 +10,17 @@ from typing import Any
 
 import pyarrow as pa
 
-from librivad.generation.config import Config
+from librivad.generation.config import LEVEL_FACTORS, Config
 from librivad.generation.corpus import SourceItem
 from librivad.generation.planner import FileSpec
 from librivad.generation.render import Rendered
 from librivad.generation.tables import CLEAN_TYPES, SEGMENTS_TYPE, WORDS_TYPE
 
 TIMESTAMP_FIELDS: tuple[str, ...] = ("words", "segments")
+
+POSITION_DECIMALS: int = 7
+"""Positions (`speech_start`, `noise_offset_s`, ...) are written to 0.1 µs, so the sample
+they start at is exact (a 16 kHz sample is 62.5 µs); `round(seconds * sr)` recovers it."""
 
 OUTPUT_TYPES: dict[str, pa.DataType] = {
     "file_name": pa.string(),
@@ -36,6 +40,7 @@ OUTPUT_TYPES: dict[str, pa.DataType] = {
     "noise_gain_db": pa.float64(),
     "clip_gain_db": pa.float64(),
     "measured_snr_db": pa.float64(),
+    "measured_loudness_lu": pa.float64(),
     "segments": SEGMENTS_TYPE,
 }
 """Types of the columns the builder adds; passthrough columns keep their input types."""
@@ -53,6 +58,7 @@ MEASURES: tuple[str, ...] = (
     "noise_gain_db",
     "clip_gain_db",
     "measured_snr_db",
+    "measured_loudness_lu",
 )
 
 
@@ -60,8 +66,8 @@ def output_schema(config: Config, input_types: dict[str, pa.DataType]) -> pa.Sch
     """The schema of every output metadata file, in `build_row`'s column order.
 
     Passthrough and timestamp columns take their type from the input corpus
-    (`input_types`), else from the clean contract; `snr_db` is int64 when every configured
-    level is an integer.
+    (`input_types`), else from the clean contract; `snr_db` and `loudness_lu` are int64
+    when every configured value of that factor is an integer.
     """
     passthrough: list[str] = config.dataset.passthrough_fields
     factors: list[str] = config.factors()[1:]
@@ -70,13 +76,19 @@ def output_schema(config: Config, input_types: dict[str, pa.DataType]) -> pa.Sch
     names += [*MEASURES, *passthrough]
     names += [f for f in TIMESTAMP_FIELDS if f in input_types]
 
-    levels: list[object] = [v for s in config.scenarios for v in s.conditions.get("snr_db", [])]
-    integer_levels: bool = all(isinstance(v, int) and not isinstance(v, bool) for v in levels)
+    integer_levels: dict[str, bool] = {
+        factor: all(
+            isinstance(v, int) and not isinstance(v, bool)
+            for s in config.scenarios
+            for v in s.conditions.get(factor, [])
+        )
+        for factor in LEVEL_FACTORS
+    }
 
     fields: list[pa.Field] = []
     for name in dict.fromkeys(names):
-        if name == "snr_db":
-            kind: pa.DataType = pa.int64() if integer_levels else pa.float64()
+        if name in LEVEL_FACTORS:
+            kind: pa.DataType = pa.int64() if integer_levels[name] else pa.float64()
         elif name == "segments":
             kind = SEGMENTS_TYPE
         elif name in OUTPUT_TYPES and name not in passthrough:
@@ -110,6 +122,10 @@ def shift_timestamps(value: Any, offset_s: float, drop_fields: list[str]) -> Any
     return value
 
 
+def _rounded(value: float | None) -> float | None:
+    return None if value is None else round(value, 3)
+
+
 def build_row(rendered: Rendered, items: dict[str, SourceItem], config: Config) -> dict[str, Any]:
     """The metadata row of one output, keys in the order of skylar's plan 3 §2."""
     spec: FileSpec = rendered.spec
@@ -119,7 +135,14 @@ def build_row(rendered: Rendered, items: dict[str, SourceItem], config: Config) 
     source_row: dict[str, Any] = first.row or {}
     speech_blocks = [b for b in spec.blocks if b.kind == "speech"]
     noise = spec.noise_block()
-    assert spec.metadata_dir is not None and noise.noise_file is not None
+    assert spec.metadata_dir is not None
+    # With `noise_span: file` the noise runs under the whole file.
+    noise_start: int = 0 if spec.noise_span == "file" or noise is None else noise.start
+    noise_end: int = (
+        spec.total_samples
+        if spec.noise_span == "file" or noise is None
+        else noise.start + noise.length
+    )
 
     row: dict[str, Any] = {
         "file_name": str(PurePosixPath(spec.out_path).relative_to(spec.metadata_dir)),
@@ -134,18 +157,19 @@ def build_row(rendered: Rendered, items: dict[str, SourceItem], config: Config) 
     row |= {
         "duration": round(spec.total_samples / sr, 4),
         "source_duration": round(spec.speech_samples / sr, 4),
-        "speech_start": round(speech_blocks[0].start / sr, 4),
-        "speech_end": round((speech_blocks[-1].start + speech_blocks[-1].length) / sr, 4),
-        "noise_start": round(noise.start / sr, 4),
-        "noise_end": round((noise.start + noise.length) / sr, 4),
+        "speech_start": round(speech_blocks[0].start / sr, POSITION_DECIMALS),
+        "speech_end": round(
+            (speech_blocks[-1].start + speech_blocks[-1].length) / sr, POSITION_DECIMALS
+        ),
+        "noise_start": round(noise_start / sr, POSITION_DECIMALS),
+        "noise_end": round(noise_end / sr, POSITION_DECIMALS),
         "noise_ratio": round(spec.noise_samples / spec.total_samples, 4),
-        "noise_file": Path(noise.noise_file).name,
-        "noise_offset_s": round((noise.noise_offset or 0) / sr, 4),
+        "noise_file": Path(spec.noise_file).name,
+        "noise_offset_s": round(spec.noise_offset / sr, POSITION_DECIMALS),
         "noise_gain_db": round(rendered.noise_gain_db, 3),
         "clip_gain_db": round(rendered.clip_gain_db, 3),
-        "measured_snr_db": (
-            round(rendered.measured_snr_db, 3) if rendered.measured_snr_db is not None else None
-        ),
+        "measured_snr_db": _rounded(rendered.measured_snr_db),
+        "measured_loudness_lu": _rounded(rendered.measured_loudness_lu),
     }
     for name in config.dataset.passthrough_fields:
         row.setdefault(name, source_row.get(name))

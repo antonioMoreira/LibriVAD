@@ -17,6 +17,7 @@ dependencies = [
     "pydantic>=2.14.2",
     "python-dotenv>=1.2.4",
     "pyyaml>=6.0.3",
+    "scipy>=1.18.1",
     "soundfile>=0.14.0",
     "tqdm>=4.70.1",
 ]
@@ -31,14 +32,12 @@ paper = [
     "pydub>=0.25.1",
     "requests>=2.34.2",
     "rvadfast>=0.10.0",
-    "scipy>=1.18.1",
 ]
 # vad/: the bDNN and ViT models and their metrics
 vad = [
     "einops>=0.8.2",
     "joblib>=1.6.0",
     "scikit-learn>=1.9.1",
-    "scipy>=1.18.1",
     "torch>=2.14.1",
 ]
 
@@ -81,6 +80,7 @@ addopts = "-m 'not slow'"
 [dependency-groups]
 dev = [
     "librivad[paper,vad]",
+    "pyloudnorm>=0.2.0",
     "pytest>=9.1.1",
     "ruff>=0.17.1",
     "ty>=0.0.90",

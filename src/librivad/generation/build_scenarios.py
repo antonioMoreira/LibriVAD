@@ -35,12 +35,12 @@ import soundfile as sf
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from librivad.generation.config import SPLITS, Config, ConfigError, load_config
+from librivad.generation.config import SPLITS, Config, ConfigError, format_value, load_config
 from librivad.generation.corpus import ContractError, CorpusAdapter, SourceItem, make_adapter
 from librivad.generation.labels import load_labels
 from librivad.generation.layout import OutputWriter
 from librivad.generation.metadata import build_row, output_schema
-from librivad.generation.noise import NoiseSource
+from librivad.generation.noise import NoiseSource, read_int16_units
 from librivad.generation.planner import FileSpec, Planner, PlanResult
 from librivad.generation.render import LEVEL_TOLERANCE_DB, Rendered, Renderer, RenderError
 from librivad.generation.tables import read_rows
@@ -134,8 +134,12 @@ def print_summary(report: dict[str, Any]) -> None:
 
 
 def _level_key(rendered: Rendered) -> str:
-    snr: float | None = rendered.spec.snr_db
-    return "no_level" if snr is None else f"snr_{snr:02.0f}"
+    """`snr_05`, `lu_-05`, or `no_level` for a fixed gain."""
+    spec: FileSpec = rendered.spec
+    for name, level in (("snr", spec.snr_db), ("lu", spec.loudness_lu)):
+        if level is not None:
+            return f"{name}_{format_value(int(level) if level.is_integer() else level)}"
+    return "no_level"
 
 
 def build(
@@ -240,17 +244,37 @@ def check(
             not label_path.is_file() or len(np.load(label_path)) != spec.total_samples
         ):
             problems.append(f"{spec.out_path}: label missing or of the wrong length")
-        if spec.snr_db is not None:
-            labels: np.ndarray = np.zeros(spec.total_samples, dtype=np.int8)
-            for ref in spec.speech_items():
-                labels[ref.offset : ref.offset + ref.n_samples] = load_labels(
-                    items[ref.id], config.dataset
-                )
-            measured: float = renderer.measure_snr(spec, audio, labels)
-            if abs(measured - spec.snr_db) > LEVEL_TOLERANCE_DB:
-                problems.append(
-                    f"{spec.out_path}: measured {measured:.3f} dB, planned {spec.snr_db}"
-                )
+        target: tuple[float, str] | None = (
+            (spec.snr_db, "dB")
+            if spec.snr_db is not None
+            else (spec.loudness_lu, "LU")
+            if spec.loudness_lu is not None
+            else None
+        )
+        if target is None:
+            continue
+        sources: dict[str, SourceItem] = {ref.id: items[ref.id] for ref in spec.speech_items()}
+        speech, labels = renderer.place_speech(
+            spec,
+            {i: read_int16_units(item.path) for i, item in sources.items()},
+            {i: load_labels(item, config.dataset) for i, item in sources.items()},
+        )
+        written: np.ndarray | None = None
+        if spec.noise_span == "file":
+            # The speech is under the noise: rebuild it as written, scaled by the clip guard.
+            row: dict[str, Any] | None = (
+                rows.get(metadata, {}).get(spec.row_id) if metadata else None
+            )
+            if row is None or config.output.normalization != "none":
+                problems.append(f"{spec.out_path}: level not checked (needs its metadata row)")
+                continue
+            written = speech * 10 ** (row["clip_gain_db"] / 20)
+        snr, loudness = renderer.measure(spec, audio, labels, written)
+        measured: float | None = snr if spec.snr_db is not None else loudness
+        if measured is None or abs(measured - target[0]) > LEVEL_TOLERANCE_DB:
+            problems.append(
+                f"{spec.out_path}: measured {measured} {target[1]}, planned {target[0]}"
+            )
     return {"checked": checked, "problems": len(problems), "details": problems[:100]}
 
 

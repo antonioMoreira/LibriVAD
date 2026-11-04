@@ -23,6 +23,12 @@
 #                  speech samples (label 1) of the speech block, in dB. The
 #                  same definition as the SNR of create_LibriVAD.py. Version 1
 #                  of this file called it noise_level_db, with the sign flipped.
+#   loudness_lu  : how far the noise's integrated loudness (ITU-R BS.1770, LUFS)
+#                  sits below that of the speech block, in LU. Same sign as snr_db.
+#   span         : noise_block.span. `block` puts the noise in the noise block
+#                  only; `file` runs one excerpt under the whole output and adds
+#                  the speech on top (the noise block is then the part without
+#                  speech).
 #
 # Worked example (noise_first below): target 30 s, noise_ratio 0.5
 #   -> speech block >= 15 s
@@ -36,8 +42,8 @@
 # Changes from version 1: version 2; noise_level_db -> snr_db (negated);
 # noise_ratio moved under noise_length (or into conditions to sweep it);
 # output.filename -> output.path (a template for the whole relative path);
-# post_mixing, overshoot_policy, ratio_basis and lufs are not implemented and
-# were removed.
+# overshoot_policy and ratio_basis are not implemented and were removed.
+# post_mixing became noise_block.span: file, and lufs loudness.measure: lufs.
 # =============================================================================
 
 version: 2
@@ -138,11 +144,12 @@ defaults:
 
   noise_block:
     source: dataset_silence
+    span: block                 # block | file (one excerpt under the whole output)
     slicing: sequential_wrap    # sequential_wrap | random_offset
-    fade_ms: 10
+    fade_ms: 10                 # span block only
 
   loudness:
-    measure: rms                # rms | fixed_gain
+    measure: rms                # rms (snr_db) | lufs (loudness_lu) | fixed_gain
     # true = measure the speech block on label-1 samples only.
     speech_only: true
 
@@ -185,6 +192,36 @@ scenarios:
       snr_db: [10]
     output_path: "{scenario}/{split_folder}/{noise}/snr_{snr_db:02d}/{first[stem]}.wav"
 
+  # Noise under the whole file: 30 s of babble, speech over its first part, the
+  # rest noise only. Levelled by loudness instead of SNR. A scenario whose level
+  # factor differs from `output.path` gives its own paths.
+  - name: noise_last_lufs
+    layout: [speech, noise]
+    speech_block:
+      composition: single
+      duration_tolerance: 0.20
+      edge_fade_ms: 10          # the default with span: file
+    noise_length:
+      mode: ratio
+      noise_ratio: 0.50
+    noise_block:
+      source: babble
+      span: file
+      slicing: random_offset
+    loudness:
+      measure: lufs
+    conditions:
+      loudness_lu: [-5, 0, 10]  # negative: noise louder than the speech
+    output_path: "{scenario}/{split_folder}/lu_{loudness_lu:02d}/{first[stem]}.wav"
+
+  # The paper's noisy LibriVAD (create_LibriVAD.py): noise over the whole
+  # utterance, no noise-only part, peak-normalized. Needs `normalization: peak`.
+  # - name: paper_noisy
+  #   layout: [speech]
+  #   speech_block: {composition: single, edge_fade_ms: 0}
+  #   noise_block: {source: babble, span: file, slicing: sequential_wrap}
+  #   conditions: {snr_db: [-5, 0, 5, 10, 15, 20]}
+
   # Reference: the paper setup (LibriSpeechConcat). Pairs of files in sorted
   # order (speaker changes allowed), gap = 25 % of the pair (20 % of the file),
   # fixed gain 0.001, peak-normalized to full scale. The working copy of this
@@ -209,12 +246,14 @@ scenarios:
 # -----------------------------------------------------------------------------
 # Validation rules the loader enforces (see docs/scenario_builder.md)
 # -----------------------------------------------------------------------------
-# - layout contains exactly one `noise`; `speech` appears once or twice.
+# - layout contains exactly one `noise` (at most one with span: file);
+#   `speech` appears once or twice.
 # - composition contiguous requires `dataset.continuity`.
 # - Fields used in group_by / continuity / templates must exist in the dataset.
 # - noise source `extracted_from_dataset` requires labels other than none.
 # - mode ratio: 0 <= noise_ratio < 1, given once (noise_length or conditions).
 # - mode fill_to_target: target_duration_s > min_noise_s >= 0.
 # - snr_db >= constraints.min_snr_db when the constraint is set.
-# - loudness fixed_gain excludes snr_db; rms requires it.
+# - loudness rms needs snr_db, lufs needs loudness_lu, and each excludes the
+#   other's factor; fixed_gain needs loudness.gain.
 # - population: every factor appears once per split, in crossed or assigned.
