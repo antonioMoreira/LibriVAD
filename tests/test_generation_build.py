@@ -208,7 +208,7 @@ def test_exit_codes(skylar_setup: dict[str, Any]) -> None:
 
 def test_schema_version_is_checked(skylar_setup: dict[str, Any]) -> None:
     schema: Path = skylar_setup["clean"].parent / ".provenance" / "schema.json"
-    schema.write_text(json.dumps({"schema_version": 2}))
+    schema.write_text(json.dumps({"schema_version": 1}))
     assert (
         main(["--config", str(write_config(skylar_setup)), "--dry-run"])
         == build_scenarios.EXIT_CONTRACT

@@ -169,7 +169,7 @@ def test_metadata_file_name_comes_from_the_schema_file(skylar_setup: dict[str, A
     for path in skylar_setup["clean"].rglob("metadata.parquet"):
         path.rename(path.with_name("rows.parquet"))
     schema: Path = skylar_setup["clean"].parent / ".provenance" / "schema.json"
-    schema.write_text(json.dumps({"schema_version": 1, "metadata_file": "rows.parquet"}))
+    schema.write_text(json.dumps({"schema_version": 2, "metadata_file": "rows.parquet"}))
     adapter = make_adapter(config_from_dict(skylar_setup["raw"]).dataset)
     assert len(adapter.items("train")) == 6
 

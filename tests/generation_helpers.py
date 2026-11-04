@@ -52,7 +52,7 @@ def write_clean_corpus(
     (root / ".provenance" / "schema.json").write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "metadata_file": "metadata.parquet",
                 "fields": clean_schema().names,
             }
@@ -94,6 +94,8 @@ def write_clean_corpus(
                             "component": None,
                             "split_group": f"spk{seed % 3}",
                             "words": words,
+                            "words_source": "ctc_mms_fa",
+                            "words_reviewed": False,
                         }
                     )
             folder.mkdir(parents=True, exist_ok=True)
@@ -130,7 +132,7 @@ def skylar_raw_config(
             "name": "skylar_clean",
             "adapter": "audiofolder",
             "root": str(clean),
-            "schema_version": 1,
+            "schema_version": 2,
             "sample_rate": SR,
             "splits": {"train": "train", "val": "val", "test": "test"},
             "id_field": "id",

@@ -48,8 +48,10 @@ CLEAN_TYPES: dict[str, pa.DataType] = {
     "component": pa.string(),
     "split_group": pa.string(),
     "words": WORDS_TYPE,
+    "words_source": pa.string(),
+    "words_reviewed": pa.bool_(),
 }
-"""Column types of skylar-dataset's clean `metadata.parquet` (schema_version 1)."""
+"""Column types of skylar-dataset's clean `metadata.parquet` (schema_version 2)."""
 
 
 def clean_schema() -> pa.Schema:
