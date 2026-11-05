@@ -151,16 +151,22 @@ def build(
     overwrite: bool,
     input_types: dict[str, Any] | None = None,
     progress: bool = True,
+    prune: bool | None = None,
 ) -> dict[str, Any]:
     """Render every selected, unfinished output. Returns the build section of the report.
 
     `input_types` are the Arrow types of the input metadata columns; the output metadata
-    keeps them for the columns it carries over.
+    keeps them for the columns it carries over. Outputs on disk that the plan no longer has
+    (the corpus changed) are counted, and with `prune` deleted first. `prune=None` means the
+    plan is narrowed (some splits, scenarios or a limit): outputs outside it can't be told
+    apart from stale ones, so nothing is counted (`unplanned: None`) or deleted.
     """
     schema = output_schema(config, input_types or {}) if config.output.metadata_dir else None
     writer = OutputWriter(config, schema)
     renderer = Renderer(config, items, noises)
     selected: list[FileSpec] = [s for s in result.specs if s.selected]
+    unplanned: int | None = len(writer.unplanned(result.specs)[0]) if prune is not None else None
+    pruned: int = writer.prune(result.specs) if prune else 0
     pending, cleanup = writer.prepare(selected, overwrite)
     pending_ids: set[str] = {s.row_id for s in pending}
 
@@ -207,6 +213,8 @@ def build(
         "failures": failures[:50],
         "clip_guard_by_level": dict(sorted(clipped.items())),
         "clip_guard_triggered_by_level": dict(sorted(triggered.items())),
+        "unplanned": unplanned,
+        "pruned": pruned,
         "cleanup": {
             "removed_tmp": cleanup.removed_tmp,
             "orphans_moved": len(cleanup.orphans),
@@ -292,6 +300,7 @@ def run(
     plan_file: Path | None = None,
     progress: bool = True,
     on_plan: Callable[[dict[str, Any]], None] | None = None,
+    prune_unplanned: bool = False,
 ) -> dict[str, Any]:
     """Plan, then render (or only check) the outputs of `config`. Returns the report.
 
@@ -300,6 +309,9 @@ def run(
     given. `check_only` re-validates outputs already on disk; its problems are in
     `report["check"]`. Failed renders are counted in `report["build"]`, not raised.
     `on_plan` receives the report once the plan is ready, before anything is rendered.
+    `prune_unplanned` deletes outputs on disk the plan no longer has (`report["build"]["pruned"]`;
+    `unplanned` counts them either way). When `scenarios`, `splits` or `limit` narrow the plan,
+    nothing is counted or deleted (`unplanned` is None).
 
     Raises `ConfigError` (including unknown scenario names), `ContractError` when the
     input corpus breaks its contract, and `LimitsExceeded` before writing anything.
@@ -345,6 +357,7 @@ def run(
             overwrite,
             adapter.field_types,
             progress=progress,
+            prune=prune_unplanned if not scenarios and not splits and limit is None else None,
         )
     report["seconds"] = round(time.monotonic() - started, 1)
     return report

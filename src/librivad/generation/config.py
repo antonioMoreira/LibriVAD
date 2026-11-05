@@ -72,6 +72,11 @@ class DatasetConfig(_Model):
     """`audiofolder`: metadata file name; default `metadata_file` from `.provenance/schema.json`,
     else `metadata.parquet`."""
     metadata_glob: str = "{split}/*/{metadata_file}"
+    order: Literal["path", "metadata"] = "path"
+    """`audiofolder`: the order of a split's items, which the population's balanced assignment
+    follows. `path` sorts them by file path. `metadata` keeps the metadata files' row order (files
+    in path order): a corpus that only appends rows then keeps every existing item's assignment
+    when it grows."""
     id_field: str = "id"
     passthrough_fields: list[str] = []
     labels: LabelsConfig = LabelsConfig()
@@ -81,6 +86,8 @@ class DatasetConfig(_Model):
     def _adapter_fields(self) -> Self:
         if self.adapter == "path_pattern" and not self.path_pattern:
             raise ValueError("adapter path_pattern needs `path_pattern`")
+        if self.order == "metadata" and self.adapter != "audiofolder":
+            raise ValueError("order metadata needs adapter audiofolder")
         if unknown := set(self.splits) - set(SPLITS):
             raise ValueError(f"unknown split names {sorted(unknown)}; use {list(SPLITS)}")
         return self

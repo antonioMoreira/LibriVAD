@@ -125,6 +125,37 @@ class OutputWriter:
                 self._flush(path)
         return pending, cleanup
 
+    def unplanned(self, specs: list[FileSpec]) -> tuple[list[Path], list[Path]]:
+        """Wavs and metadata files under `root` that no spec plans (hidden folders aside)."""
+        planned: set[str] = {s.out_path for s in specs}
+        folders: set[str] = {s.metadata_dir for s in specs if s.metadata_dir is not None}
+        wavs: list[Path] = []
+        metadata: list[Path] = []
+        if not self.root.is_dir():
+            return wavs, metadata
+        for path in sorted(self.root.rglob("*")):
+            relative = path.relative_to(self.root)
+            if any(part.startswith(".") for part in relative.parts) or not path.is_file():
+                continue
+            if path.suffix == ".wav" and relative.as_posix() not in planned:
+                wavs.append(path)
+            elif path.name == METADATA_NAME and relative.parent.as_posix() not in folders:
+                metadata.append(path)
+        return wavs, metadata
+
+    def prune(self, specs: list[FileSpec]) -> int:
+        """Delete what `unplanned` finds, with each wav's label; rows of a deleted wav that
+        sit in a planned metadata file are dropped by `prepare`. Returns the wavs deleted."""
+        wavs, metadata = self.unplanned(specs)
+        for wav in wavs:
+            wav.unlink()
+            if self.labels_root is not None:
+                label: Path = self.labels_root / wav.relative_to(self.root).with_suffix(".npy")
+                label.unlink(missing_ok=True)
+        for path in metadata:
+            path.unlink()
+        return len(wavs)
+
     def write(self, rendered: Rendered, row: dict[str, Any] | None) -> None:
         spec: FileSpec = rendered.spec
         wav: Path = self.wav_path(spec)

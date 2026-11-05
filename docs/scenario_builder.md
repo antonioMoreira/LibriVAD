@@ -12,8 +12,8 @@ file (version 2). Examples:
 | [`configs/scenarios/skylar_noisy.example.yaml`](../configs/scenarios/skylar_noisy.example.yaml) | SkylarDataset's `noisy` subset from its `clean` subset: 30 s files with the noise under the whole file, speech first or last, 9 noise kinds, levels by SNR and by loudness. |
 | [`docs/concat_scenarios.example.yaml`](concat_scenarios.example.yaml) | Commented reference of every option, on LibriSpeech. |
 
-Noise under the whole file and loudness levels are described in
-[plans/05-noise-over-speech.md](plans/05-noise-over-speech.md).
+Noise under the whole file and loudness levels were added for SkylarDataset's noisy subset
+(its ADR 0009); this guide describes them below.
 
 ## Running it
 
@@ -65,7 +65,10 @@ report["build"]["written"], report["build"]["failed"]
 
 `run()` takes the same options as the flags (`scenarios`, `splits`, `limit`, `workers`,
 `overwrite`, `dry_run`, `check_only`, `allow_over_limits`, `plan_file`) and returns the
-report the CLI writes with `--report`. Instead of exit codes it raises `ConfigError` (2),
+report the CLI writes with `--report`. With `prune_unplanned=True`, outputs on disk that the
+plan no longer has (the corpus changed) are deleted first (`report["build"]["pruned"]`;
+`unplanned` counts them either way); a plan narrowed by `scenarios`, `splits` or `limit`
+counts and deletes nothing. Instead of exit codes it raises `ConfigError` (2),
 `LimitsExceeded` (3, before anything is written) or `ContractError` (4). Failed renders
 are counted in `report["build"]`, not raised. `on_plan` is called with the report once the
 plan is ready, before rendering. `report["librivad"]` holds the package version, plus the
@@ -79,6 +82,7 @@ paths in a config resolve against `base`, else `PROJECT_ROOT`, else the current 
 - **`dataset`** describes the corpus. Nothing corpus-specific is in code.
   - `adapter: path_pattern` parses fields from paths, e.g. `{split}/{speaker}/{chapter}/{speaker}-{chapter}-{utt}.wav`.
   - `adapter: audiofolder` reads `metadata.parquet` files; `file_name` is relative to each file. The file name comes from `metadata_file` in `<root>/../.provenance/schema.json` (default `metadata.parquet`), and every file must have the same column types.
+  - `order` (`audiofolder`): `path` (default) sorts a split's items by file path; `metadata` keeps the metadata files' row order. The population's balanced assignment follows this order, so a corpus that only appends rows (skylar's) keeps every existing output's assignment when it grows.
   - `labels.source` gives the speech/non-speech labels: `textgrid`, `npy`, `words` (from the metadata row) or `none`.
 - **`noise_sources`** are named recordings:
   - `file_per_split` has `{split}` in its path, so train, val and test never share noise audio.

@@ -260,7 +260,8 @@ class AudioFolderAdapter(CorpusAdapter):
                         row=row,
                     )
                 )
-        items.sort(key=lambda item: item.path.relative_to(self.config.root).as_posix())
+        if self.config.order == "path":
+            items.sort(key=lambda item: item.path.relative_to(self.config.root).as_posix())
         return items
 
 
