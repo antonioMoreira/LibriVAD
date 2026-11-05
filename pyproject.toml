@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Antonio Moreira", email = "antonionmoreira@gmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 # The core is what the scenario builder (`librivad.generation`) needs, so another project
 # can import it without the paper scripts or the VAD models. Those are the extras below;
 # the `dev` group installs both for work inside this repository.
@@ -56,7 +56,7 @@ link-mode = "copy"
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -66,7 +66,7 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.ty.environment]
-python-version = "3.12"
+python-version = "3.14"
 
 [tool.ty.src]
 include = ["src", "*.py"]
