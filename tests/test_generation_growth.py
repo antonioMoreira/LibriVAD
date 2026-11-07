@@ -6,6 +6,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 import soundfile as sf
 from generation_helpers import SR, speech_like
@@ -105,3 +106,49 @@ def test_outputs_the_plan_dropped_are_pruned(skylar_setup: dict[str, Any]) -> No
     assert (
         run(config_from_dict(raw), progress=False, prune_unplanned=True)["build"]["unplanned"] == 0
     )
+
+
+def test_a_metadata_file_with_an_outdated_schema_is_rewritten(
+    skylar_setup: dict[str, Any],
+) -> None:
+    """A config that dropped a level factor (`loudness_lu`) leaves its column in files the
+    next build does not touch; the build rewrites them so every file has the same columns."""
+    raw = growing_raw(skylar_setup)
+    run(config_from_dict(raw), workers=2, progress=False)
+    files: list[Path] = sorted(skylar_setup["output"].rglob("metadata.parquet"))
+    current = pq.read_schema(files[0])
+    old = pq.read_table(files[0])
+    pq.write_table(old.append_column("loudness_lu", pa.nulls(len(old), pa.int64())), files[0])
+    before = snapshot(skylar_setup["output"])
+
+    report: dict[str, Any] = run(config_from_dict(raw), workers=2, progress=False)
+    assert report["build"]["written"] == 0
+    assert report["build"]["cleanup"]["schema_rewrites"] == 1
+    assert all(pq.read_schema(f).equals(current, check_metadata=False) for f in files)
+    assert pq.read_table(files[0]).num_rows == old.num_rows
+    assert snapshot(skylar_setup["output"]) == before  # no wav rewritten
+    again = run(config_from_dict(raw), progress=False)
+    assert again["build"]["cleanup"]["schema_rewrites"] == 0
+
+
+def test_outputs_named_flac_are_flac_with_the_same_samples(skylar_setup: dict[str, Any]) -> None:
+    """The output path's extension picks the format: FLAC holds the same 16-bit samples."""
+    raw = growing_raw(skylar_setup)
+    run(config_from_dict(raw), workers=2, progress=False)
+    flac_raw = copy.deepcopy(raw)
+    flac_raw["output"]["root"] = str(skylar_setup["tmp"] / "flac")
+    flac_raw["output"]["path"] = raw["output"]["path"].removesuffix(".wav") + ".flac"
+    report: dict[str, Any] = run(config_from_dict(flac_raw), workers=2, progress=False)
+    assert report["build"]["failed"] == 0
+    wavs = sorted(skylar_setup["output"].rglob("*.wav"))
+    flacs = sorted((skylar_setup["tmp"] / "flac").rglob("*.flac"))
+    assert len(wavs) == len(flacs) > 0
+    for wav, flac in zip(wavs, flacs, strict=True):
+        assert sf.info(str(flac)).format == "FLAC" and sf.info(str(flac)).subtype == "PCM_16"
+        assert (sf.read(str(wav), dtype="int16")[0] == sf.read(str(flac), dtype="int16")[0]).all()
+    names = {
+        r["file_name"]
+        for m in (skylar_setup["tmp"] / "flac").rglob("metadata.parquet")
+        for r in pq.read_table(m).to_pylist()
+    }
+    assert names and all(name.endswith(".flac") for name in names)

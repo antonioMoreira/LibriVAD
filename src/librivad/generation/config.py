@@ -587,6 +587,8 @@ def _check_templates(config: Config, fields: set[str]) -> list[str]:
         where: str = f"scenario {scenario.name}:"
         if unknown := template_fields(path) - allowed:
             errors.append(f"{where} output path uses unknown placeholders {sorted(unknown)}")
+        if not path.endswith((".wav", ".flac")):
+            errors.append(f"{where} output path must end in .wav or .flac, got {path!r}")
         metadata_dir: str | None = scenario.metadata_dir or output.metadata_dir
         if metadata_dir is None:
             continue

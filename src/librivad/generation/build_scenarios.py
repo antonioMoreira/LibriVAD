@@ -219,6 +219,7 @@ def build(
             "removed_tmp": cleanup.removed_tmp,
             "orphans_moved": len(cleanup.orphans),
             "dropped_rows": cleanup.dropped_rows,
+            "schema_rewrites": cleanup.schema_rewrites,
         },
     }
 

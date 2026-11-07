@@ -12,6 +12,8 @@ Writes rendered outputs and keeps the output folder consistent across runs.
     planned wavs without a row (written after the last checkpoint) are moved to
     `.orphans/<timestamp>/` and rendered again, and rows whose wav is gone are dropped.
     Outputs with both wav and row are skipped (resume).
+  - A metadata file whose schema is not the current one (the config dropped or added a
+    level factor) is rewritten with it, so every file of a build has the same columns.
 """
 
 import datetime
@@ -25,6 +27,7 @@ from typing import Any
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.parquet as pq
 import soundfile as sf
 
 from librivad.generation.config import Config
@@ -34,6 +37,8 @@ from librivad.generation.tables import read_rows, write_rows
 
 METADATA_NAME: str = "metadata.parquet"
 CHECKPOINT_ROWS: int = 500
+OUTPUT_FORMATS: dict[str, str] = {".wav": "WAV", ".flac": "FLAC"}
+"""Audio formats an output path may end with; both hold 16-bit PCM (FLAC losslessly compressed)."""
 
 
 @dataclass
@@ -41,6 +46,7 @@ class Cleanup:
     removed_tmp: int = 0
     orphans: list[str] = field(default_factory=list)
     dropped_rows: int = 0
+    schema_rewrites: int = 0
 
 
 class OutputWriter:
@@ -104,6 +110,9 @@ class OutputWriter:
                     del rows[row_id]
                     cleanup.dropped_rows += 1
                     self._dirty.add(path)
+            if self.outdated_schema(path):
+                cleanup.schema_rewrites += 1
+                self._dirty.add(path)
 
         stamp: str = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
         pending: list[FileSpec] = []
@@ -125,8 +134,14 @@ class OutputWriter:
                 self._flush(path)
         return pending, cleanup
 
+    def outdated_schema(self, path: Path) -> bool:
+        """A Parquet metadata file on disk whose columns or types differ from `schema`."""
+        if self.schema is None or path.suffix != ".parquet" or not path.is_file():
+            return False
+        return not pq.read_schema(path).equals(self.schema, check_metadata=False)
+
     def unplanned(self, specs: list[FileSpec]) -> tuple[list[Path], list[Path]]:
-        """Wavs and metadata files under `root` that no spec plans (hidden folders aside)."""
+        """Audio and metadata files under `root` that no spec plans (hidden folders aside)."""
         planned: set[str] = {s.out_path for s in specs}
         folders: set[str] = {s.metadata_dir for s in specs if s.metadata_dir is not None}
         wavs: list[Path] = []
@@ -137,7 +152,7 @@ class OutputWriter:
             relative = path.relative_to(self.root)
             if any(part.startswith(".") for part in relative.parts) or not path.is_file():
                 continue
-            if path.suffix == ".wav" and relative.as_posix() not in planned:
+            if path.suffix in OUTPUT_FORMATS and relative.as_posix() not in planned:
                 wavs.append(path)
             elif path.name == METADATA_NAME and relative.parent.as_posix() not in folders:
                 metadata.append(path)
@@ -161,7 +176,8 @@ class OutputWriter:
         wav: Path = self.wav_path(spec)
         wav.parent.mkdir(parents=True, exist_ok=True)
         tmp: Path = wav.with_name(wav.name + ".tmp")
-        sf.write(str(tmp), rendered.audio, self.sample_rate, subtype="PCM_16", format="WAV")
+        audio_format: str = OUTPUT_FORMATS[wav.suffix]  # by the final name: `.tmp` says nothing
+        sf.write(str(tmp), rendered.audio, self.sample_rate, subtype="PCM_16", format=audio_format)
         os.replace(tmp, wav)
 
         label: Path | None = self.label_path(spec)
